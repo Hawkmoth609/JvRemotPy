@@ -20,7 +20,8 @@ def run(message=""):
     Main function called from the Android app.
     Returns a greeting message.
     """
-    return f"مرحباً من Python! الإصدار: {get_version()}. رسالتك: {message}"
+    #return f"مرحباً من Python! الإصدار: {get_version()}. رسالتك: {message}"
+    return f"🎉 تم التحديث من GitHub! الإصدار: {get_version()}. رسالتك: {message}"
 
 
 def process_data(data):
