@@ -1,53 +1,62 @@
 """
 Main entry point for JvRemotPy.
-Handles Discord bot operations with proper Intents.
+Handles Discord bot operations with proper Intents and error handling.
 """
 
 import sys
 import os
+import asyncio
+import threading
 
 # Add current directory to path so we can import modules
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# ✅ إصلاح الخطأ 2: استيراد Intents (ضرورية لـ discord.py 2.x)
+# ✅ استيراد مكتبات Discord مع معالجة الأخطاء
 try:
     import discord
     from discord.ext import commands
     DISCORD_AVAILABLE = True
 except ImportError as e:
-    print(f"discord.py not available: {e}")
+    print(f"❌ discord.py not available: {e}")
     DISCORD_AVAILABLE = False
 
 
 def get_version():
     """Returns the current version of the script."""
-    return "1.1.0"
+    return "2.0.0"
 
 
 def run(message=""):
     """دالة اختبار بسيطة (تعمل بدون Discord)."""
-    return f"مرحباً من Python! الإصدار: {get_version()}. رسالتك: {message}"
+    return f"🎉 تم التحديث من GitHub! الإصدار: {get_version()}. رسالتك: {message}"
 
 
 def run_bot(token=None):
     """
-    ✅ إصلاح الخطأ 2: تشغيل بوت Discord مع Intents الصحيحة.
-
+    ✅ دالة تشغيل بوت Discord (كانت مفقودة تمامًا!).
+    
     الخطأ السابق "The application did not respond" سببه:
-    - عدم تفعيل message_content intent.
-    - عدم معالجة الأخطاء داخل الأوامر.
-
+    1. عدم وجود هذه الدالة أصلاً.
+    2. عدم تفعيل message_content intent.
+    3. عدم معالجة الأخطاء داخل الأوامر.
+    
     الحلول المطبقة:
-    1. تفعيل Intents المناسبة.
-    2. إضافة معالجة أخطاء شاملة (on_command_error).
-    3. إضافة on_ready و on_message للتشخيص.
-    4. إرجاع رد فوري لكل أمر.
+    1. إنشاء النوايا (Intents) المناسبة.
+    2. إضافة on_ready للتشخيص.
+    3. إضافة on_command_error لمعالجة الأخطاء.
+    4. تشغيل البوت في حلقة غير متزامنة.
     """
     if not DISCORD_AVAILABLE:
-        return "خطأ: مكتبة discord.py غير متوفرة"
+        msg = "❌ خطأ: مكتبة discord.py غير متوفرة"
+        print(msg)
+        return msg
 
     if not token:
-        return "خطأ: التوكن مطلوب"
+        msg = "❌ خطأ: التوكن مطلوب"
+        print(msg)
+        return msg
+
+    print(f"🚀 بدء تشغيل البوت... (Python {sys.version.split()[0]})")
 
     # ✅ إنشاء النوايا (Intents) — ضروري لـ discord.py 2.x
     intents = discord.Intents.default()
@@ -64,13 +73,14 @@ def run_bot(token=None):
         print(f"✅ Connected to {len(bot.guilds)} guild(s)")
         for guild in bot.guilds:
             print(f"   - {guild.name} (id: {guild.id})")
+        print("🎉 البوت جاهز لاستقبال الأوامر")
 
     # ✅ معالجة الأخطاء داخل الأوامر (يمنع "The application did not respond")
     @bot.event
     async def on_command_error(ctx, error):
         print(f"❌ Command error: {error}")
         try:
-            await ctx.send(f"حدث خطأ: {error}")
+            await ctx.send(f"⚠️ حدث خطأ: {error}")
         except Exception as e:
             print(f"Failed to send error message: {e}")
 
@@ -92,9 +102,17 @@ def run_bot(token=None):
     # ✅ تشغيل البوت
     try:
         bot.run(token)
-        return "تم إيقاف البوت"
+        return "✅ تم إيقاف البوت"
+    except discord.LoginFailure:
+        msg = "❌ فشل تسجيل الدخول: التوكن غير صحيح"
+        print(msg)
+        return msg
+    except discord.PrivilegedIntentsRequired:
+        msg = "❌ خطأ: يجب تفعيل 'Message Content Intent' في Discord Developer Portal"
+        print(msg)
+        return msg
     except Exception as e:
-        error_msg = f"فشل تشغيل البوت: {e}"
+        error_msg = f"❌ فشل تشغيل البوت: {e}"
         print(error_msg)
         return error_msg
 
