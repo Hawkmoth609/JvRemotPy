@@ -1,10 +1,124 @@
 {
-  "version": "4.0.0",
+  "version": "6.0.0",
+  "schema_version": 2,
+  "generated_at": "2026-09-25T14:30:00Z",
+  "last_commit": "76df076",
+  "min_app_version": "1.0",
+  "min_python_version": "3.11",
+
+  "info": {
+    "name": "JvRemotPy Core Scripts",
+    "description": "Discord bot runtime for Android via Chaquopy",
+    "author": "Hawkmoth609",
+    "repository": "https://github.com/Hawkmoth609/JvRemotPy",
+    "license": "MIT"
+  },
+
   "files": [
+    "main.py",
     "bridge.py",
     "hawkmoth_bot.py",
-    "main.py",
     "modules/__init__.py",
     "modules/helpers.py"
-  ]
+  ],
+
+  "entry_points": {
+    "primary": "main.py",
+    "bot_function": "run_bot",
+    "stop_function": "stop_bot",
+    "status_function": "get_bot_status",
+    "version_function": "get_version",
+    "run_function": "run"
+  },
+
+  "dependencies": {
+    "discord.py": ">=2.4.0",
+    "aiohttp": ">=3.10.5",
+    "requests": ">=2.32.3",
+    "python-dotenv": ">=1.0.1"
+  },
+
+  "metadata": {
+    "total_files": 5,
+    "python_version": "3.11",
+    "chaquopy_version": "15.0.1",
+    "target_android_api": 34,
+    "min_android_api": 26,
+    "estimated_size_kb": 45,
+    "checksum_algorithm": "sha256"
+  },
+
+  "capabilities": {
+    "discord_bot": true,
+    "contacts_access": true,
+    "contacts_bridge": "com.example.myfirstapp.ContactsBridge",
+    "hot_reload": true,
+    "graceful_shutdown": true,
+    "thread_safe": true,
+    "auto_reconnect": true
+  },
+
+  "commands": {
+    "public": [
+      "ping", "hello", "version", "info", "uptime",
+      "echo", "say", "serverinfo", "userinfo", "avatar",
+      "contacts", "contactscount", "help"
+    ],
+    "owner_only": [
+      "stop", "reload", "exec", "eval", "bridge"
+    ]
+  },
+
+  "changelog": [
+    {
+      "version": "6.0.0",
+      "date": "2026-09-25",
+      "breaking": false,
+      "changes": [
+        "run_bot يستقبل owner_id / guild_id / allowed_user_id من Java",
+        "BotConfig يحتفظ بـ guild_id و allowed_user_id",
+        "دمج ContactsBridge (جهات الاتصال من Java)",
+        "أوامر جديدة: !contacts, !contactscount, !bridge",
+        "!info يعرض كل الإعدادات + حالة Contacts",
+        "_safe_int() لتنظيف IDs",
+        "is_contacts_bridge_ready() دالة عامة"
+      ]
+    },
+    {
+      "version": "5.0.0",
+      "date": "2026-09-24",
+      "breaking": false,
+      "changes": [
+        "help_command=None (لا تعارض مع !help)",
+        "bot.owner_id يعمل بشكل صحيح",
+        "on_ready يُستدعى مرة واحدة",
+        "Thread-safe state management",
+        "!exec يدعم statements"
+      ]
+    },
+    {
+      "version": "4.0.0",
+      "date": "2026-09-23",
+      "breaking": true,
+      "changes": [
+        "إعادة هيكلة كاملة",
+        "إصلاح validate_token (base64-aware)",
+        "إزالة التحقق الخاطئ من isdigit()"
+      ]
+    }
+  ],
+
+  "compatibility": {
+    "min_app_version": "1.0",
+    "max_app_version": null,
+    "requires_rebuild": false,
+    "backward_compatible_with": ["5.0.0"]
+  },
+
+  "sync_hints": {
+    "cache_ttl_seconds": 3600,
+    "use_etag": true,
+    "delta_sync": true,
+    "priority_files": ["main.py"]
+  }
 }
