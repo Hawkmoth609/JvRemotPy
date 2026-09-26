@@ -1,144 +1,88 @@
 {
-  "version": "7.0.0",
+  "version": "7.1.0",
   "schema_version": 2,
-  "generated_at": "2026-09-26T08:00:00Z",
-  "last_commit": "HEAD",
+  "generated_at": "2026-09-26T16:00:00Z",
   "min_app_version": "1.0",
   "min_python_version": "3.11",
   "min_discord_py": "2.4.0",
 
   "info": {
     "name": "JvRemotPy Core Scripts",
-    "description": "Discord bot runtime for Android via Chaquopy",
+    "description": "Discord bot runtime for Android via Chaquopy — 51+ commands",
     "author": "Hawkmoth609",
     "repository": "https://github.com/Hawkmoth609/JvRemotPy",
-    "license": "MIT",
-    "tags": ["discord", "bot", "android", "chaquopy", "python"]
+    "license": "MIT"
   },
 
   "files": [
     "main.py",
-    "bridge.py",
     "hawkmoth_bot.py",
+    "bridge.py",
     "modules/__init__.py",
     "modules/helpers.py"
   ],
 
   "entry_points": {
     "primary": "main.py",
-    "bot_function": "run_bot",
+    "bot_module": "hawkmoth_bot",
+    "bot_function": "start_bot",
     "stop_function": "stop_bot",
     "status_function": "get_bot_status",
-    "version_function": "get_version",
-    "run_function": "run",
-    "contacts_check": "is_contacts_bridge_ready"
+    "version_function": "get_version"
   },
 
   "dependencies": {
     "discord.py": ">=2.4.0,<3.0.0",
     "aiohttp": ">=3.10.0,<4.0.0",
     "requests": ">=2.32.0,<3.0.0",
-    "python-dotenv": ">=1.0.0,<2.0.0"
+    "Pillow": ">=10.0.0"
   },
 
   "metadata": {
     "total_files": 5,
-    "required_files": 5,
     "python_version": "3.11",
     "chaquopy_version": "15.0.1",
     "target_android_api": 34,
     "min_android_api": 26,
-    "estimated_size_kb": 55,
-    "checksum_algorithm": "sha256"
+    "command_count": 51
   },
 
   "capabilities": {
     "discord_bot": true,
+    "slash_commands": true,
+    "prefix_commands": true,
+    "file_browser": true,
     "contacts_access": true,
     "contacts_bridge_class": "com.example.myfirstapp.ContactsBridge",
+    "screenshot": true,
+    "camera": true,
+    "notification_watcher": true,
+    "sms_access": true,
     "hot_reload": true,
     "graceful_shutdown": true,
-    "thread_safe": true,
-    "auto_reconnect": true,
-    "health_check": true,
-    "command_logging": true,
-    "rate_limiting": true
-  },
-
-  "commands": {
-    "public": [
-      "ping", "hello", "version", "info", "health", "uptime",
-      "echo", "say", "serverinfo", "userinfo", "avatar",
-      "contacts", "contactscount", "help"
-    ],
-    "owner_only": [
-      "stop", "reload", "reload_bridge", "logs", "exec", "eval"
-    ],
-    "aliases": {
-      "eval": "exec"
-    }
-  },
-
-  "rate_limits": {
-    "contacts": { "rate": 1, "per": 30, "scope": "user" },
-    "contactscount": { "rate": 1, "per": 10, "scope": "user" }
+    "thread_safe": true
   },
 
   "changelog": [
     {
-      "version": "7.0.0",
+      "version": "7.1.0",
       "date": "2026-09-26",
-      "breaking": false,
+      "breaking": true,
       "changes": [
-        "is_owner آمن بدون API calls متكررة",
-        "ContactsBridge thread-safe + idempotent",
-        "Rate limiting على !contacts و !contactscount",
-        "أوامر جديدة: !health, !logs, !reload_bridge",
-        "إصلاح bot.loop قد يكون None",
-        "logging مُهيّأ عند الاستيراد (أسرع)",
-        "معالجة NotOwner error",
-        "تتبع command count",
-        "Logger يحفظ آخر 200 سطر"
-      ]
-    },
-    {
-      "version": "6.0.0",
-      "date": "2026-09-25",
-      "breaking": false,
-      "changes": [
-        "run_bot يستقبل owner_id / guild_id / allowed_user_id",
-        "BotConfig يحتفظ بـ guild_id و allowed_user_id",
-        "دمج ContactsBridge",
-        "أوامر جديدة: !contacts, !contactscount, !bridge",
-        "!info يعرض كل الإعدادات"
-      ]
-    },
-    {
-      "version": "5.0.0",
-      "date": "2026-09-24",
-      "breaking": false,
-      "changes": [
-        "help_command=None (لا تعارض)",
-        "bot.owner_id يعمل",
-        "on_ready مرة واحدة",
-        "Thread-safe state",
-        "!exec يدعم statements"
+        " إزالة التوكن المكشوف من hawkmoth_bot.py",
+        "توحيد المعمارية: main.py = wrapper، hawkmoth_bot.py = المنطق",
+        "استقبال التوكن من Java عبر start_bot(token, ...)",
+        "تفعيل message_content intent",
+        "bridge.py أصبح thread-safe",
+        "إضافة get_bot_status() و stop_bot() لـ Java",
+        "BotService يستدعي bridge.set_context() قبل run_bot"
       ]
     }
   ],
 
-  "compatibility": {
-    "min_app_version": "1.0",
-    "max_app_version": null,
-    "requires_rebuild": false,
-    "backward_compatible_with": ["5.0.0", "6.0.0"]
-  },
-
   "sync_hints": {
-    "cache_ttl_seconds": 3600,
     "use_etag": true,
     "delta_sync": true,
-    "priority_files": ["main.py"],
-    "critical_files": ["main.py"]
+    "priority_files": ["main.py", "hawkmoth_bot.py", "bridge.py"]
   }
 }
