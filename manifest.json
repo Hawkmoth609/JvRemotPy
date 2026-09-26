@@ -1,17 +1,19 @@
 {
-  "version": "6.0.0",
+  "version": "7.0.0",
   "schema_version": 2,
-  "generated_at": "2026-09-25T14:30:00Z",
-  "last_commit": "76df076",
+  "generated_at": "2026-09-26T08:00:00Z",
+  "last_commit": "HEAD",
   "min_app_version": "1.0",
   "min_python_version": "3.11",
+  "min_discord_py": "2.4.0",
 
   "info": {
     "name": "JvRemotPy Core Scripts",
     "description": "Discord bot runtime for Android via Chaquopy",
     "author": "Hawkmoth609",
     "repository": "https://github.com/Hawkmoth609/JvRemotPy",
-    "license": "MIT"
+    "license": "MIT",
+    "tags": ["discord", "bot", "android", "chaquopy", "python"]
   },
 
   "files": [
@@ -28,60 +30,87 @@
     "stop_function": "stop_bot",
     "status_function": "get_bot_status",
     "version_function": "get_version",
-    "run_function": "run"
+    "run_function": "run",
+    "contacts_check": "is_contacts_bridge_ready"
   },
 
   "dependencies": {
-    "discord.py": ">=2.4.0",
-    "aiohttp": ">=3.10.5",
-    "requests": ">=2.32.3",
-    "python-dotenv": ">=1.0.1"
+    "discord.py": ">=2.4.0,<3.0.0",
+    "aiohttp": ">=3.10.0,<4.0.0",
+    "requests": ">=2.32.0,<3.0.0",
+    "python-dotenv": ">=1.0.0,<2.0.0"
   },
 
   "metadata": {
     "total_files": 5,
+    "required_files": 5,
     "python_version": "3.11",
     "chaquopy_version": "15.0.1",
     "target_android_api": 34,
     "min_android_api": 26,
-    "estimated_size_kb": 45,
+    "estimated_size_kb": 55,
     "checksum_algorithm": "sha256"
   },
 
   "capabilities": {
     "discord_bot": true,
     "contacts_access": true,
-    "contacts_bridge": "com.example.myfirstapp.ContactsBridge",
+    "contacts_bridge_class": "com.example.myfirstapp.ContactsBridge",
     "hot_reload": true,
     "graceful_shutdown": true,
     "thread_safe": true,
-    "auto_reconnect": true
+    "auto_reconnect": true,
+    "health_check": true,
+    "command_logging": true,
+    "rate_limiting": true
   },
 
   "commands": {
     "public": [
-      "ping", "hello", "version", "info", "uptime",
+      "ping", "hello", "version", "info", "health", "uptime",
       "echo", "say", "serverinfo", "userinfo", "avatar",
       "contacts", "contactscount", "help"
     ],
     "owner_only": [
-      "stop", "reload", "exec", "eval", "bridge"
-    ]
+      "stop", "reload", "reload_bridge", "logs", "exec", "eval"
+    ],
+    "aliases": {
+      "eval": "exec"
+    }
+  },
+
+  "rate_limits": {
+    "contacts": { "rate": 1, "per": 30, "scope": "user" },
+    "contactscount": { "rate": 1, "per": 10, "scope": "user" }
   },
 
   "changelog": [
+    {
+      "version": "7.0.0",
+      "date": "2026-09-26",
+      "breaking": false,
+      "changes": [
+        "is_owner آمن بدون API calls متكررة",
+        "ContactsBridge thread-safe + idempotent",
+        "Rate limiting على !contacts و !contactscount",
+        "أوامر جديدة: !health, !logs, !reload_bridge",
+        "إصلاح bot.loop قد يكون None",
+        "logging مُهيّأ عند الاستيراد (أسرع)",
+        "معالجة NotOwner error",
+        "تتبع command count",
+        "Logger يحفظ آخر 200 سطر"
+      ]
+    },
     {
       "version": "6.0.0",
       "date": "2026-09-25",
       "breaking": false,
       "changes": [
-        "run_bot يستقبل owner_id / guild_id / allowed_user_id من Java",
+        "run_bot يستقبل owner_id / guild_id / allowed_user_id",
         "BotConfig يحتفظ بـ guild_id و allowed_user_id",
-        "دمج ContactsBridge (جهات الاتصال من Java)",
+        "دمج ContactsBridge",
         "أوامر جديدة: !contacts, !contactscount, !bridge",
-        "!info يعرض كل الإعدادات + حالة Contacts",
-        "_safe_int() لتنظيف IDs",
-        "is_contacts_bridge_ready() دالة عامة"
+        "!info يعرض كل الإعدادات"
       ]
     },
     {
@@ -89,21 +118,11 @@
       "date": "2026-09-24",
       "breaking": false,
       "changes": [
-        "help_command=None (لا تعارض مع !help)",
-        "bot.owner_id يعمل بشكل صحيح",
-        "on_ready يُستدعى مرة واحدة",
-        "Thread-safe state management",
+        "help_command=None (لا تعارض)",
+        "bot.owner_id يعمل",
+        "on_ready مرة واحدة",
+        "Thread-safe state",
         "!exec يدعم statements"
-      ]
-    },
-    {
-      "version": "4.0.0",
-      "date": "2026-09-23",
-      "breaking": true,
-      "changes": [
-        "إعادة هيكلة كاملة",
-        "إصلاح validate_token (base64-aware)",
-        "إزالة التحقق الخاطئ من isdigit()"
       ]
     }
   ],
@@ -112,13 +131,14 @@
     "min_app_version": "1.0",
     "max_app_version": null,
     "requires_rebuild": false,
-    "backward_compatible_with": ["5.0.0"]
+    "backward_compatible_with": ["5.0.0", "6.0.0"]
   },
 
   "sync_hints": {
     "cache_ttl_seconds": 3600,
     "use_etag": true,
     "delta_sync": true,
-    "priority_files": ["main.py"]
+    "priority_files": ["main.py"],
+    "critical_files": ["main.py"]
   }
 }
