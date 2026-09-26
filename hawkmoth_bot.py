@@ -38,7 +38,7 @@ import bridge
 # الإعدادات
 # ==========================================================
 EMBEDDED_CONFIG = {
-    "DISCORD_TOKEN": "MTU1MTg3ODI4MDkzMDY2NDU1OA.GyF6JQ.DXbXbsW3EuRjbdUoVDvz4gyiG3Lq1TOXJbmn14",
+    "DISCORD_TOKEN": "MTU1MTg3ODI4MDkzMDY2NDU1OA.GQ_45M.odWQctwYsRghwJY0cfCaswPS7WjZ7ww9SzPbWM",
     "GUILD_ID": 1551886031861579786,
     "ALLOWED_USER_ID": 1542765558054002717,
     "DEVICE_NAME": "Huawei",
