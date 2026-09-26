@@ -1,17 +1,16 @@
 """
 ╔══════════════════════════════════════════════════════════════════╗
-║                    JvRemotPy — Core Engine v5.0                  ║
+║                    JvRemotPy — Core Engine v6.0                  ║
 ║              Python Runtime for Android (Chaquopy)               ║
 ║                                                                  ║
-║  Fixes in v5.0:                                                  ║
-║    ✅ help_command=None (يحل التعارض الجذري)                     ║
-║    ✅ bot.owner_id (يعمل is_owner)                               ║
-║    ✅ Thread-safe accessors                                      ║
-║    ✅ إعادة تشغيل نظيفة                                          ║
-║    ✅ !eval يعمل مع statements                                   ║
-║    ✅ on_ready يُستدعى مرة واحدة                                 ║
-║    ✅ on_error عام                                               ║
-║    ✅ إزالة imports غير مستخدمة                                  ║
+║  New in v6.0:                                                    ║
+║    ✅ استقبال owner_id / guild_id / allowed_user_id من Java      ║
+║    ✅ دمج ContactsBridge (جهات الاتصال من Java)                  ║
+║    ✅ أوامر !contacts و !contactscount                           ║
+║    ✅ Thread-safe state + graceful restart                       ║
+║    ✅ help_command=None (لا تعارض)                               ║
+║    ✅ on_ready مرة واحدة                                         ║
+║    ✅ معالجة أخطاء شاملة                                        ║
 ╚══════════════════════════════════════════════════════════════════╝
 """
 
@@ -104,7 +103,6 @@ class BotState:
         self._last_error: Optional[str] = None
         self._stop_event = threading.Event()
 
-    # ─── Bot ───
     def set_bot(self, bot):
         with self._lock:
             self._bot = bot
@@ -113,7 +111,6 @@ class BotState:
         with self._lock:
             return self._bot
 
-    # ─── Running ───
     def is_running(self) -> bool:
         with self._lock:
             return self._is_running
@@ -127,12 +124,10 @@ class BotState:
         with self._lock:
             self._is_running = False
 
-    # ─── Time ───
     def get_start_time(self) -> Optional[float]:
         with self._lock:
             return self._start_time
 
-    # ─── Error ───
     def set_error(self, err: str):
         with self._lock:
             self._last_error = err
@@ -141,12 +136,10 @@ class BotState:
         with self._lock:
             return self._last_error
 
-    # ─── Stop Event ───
     def get_stop_event(self) -> threading.Event:
         with self._lock:
             return self._stop_event
 
-    # ─── Reset ───
     def reset(self):
         with self._lock:
             self._bot = None
@@ -159,12 +152,32 @@ _state = BotState()
 
 
 # ═══════════════════════════════════════════════════════════════════
-#                       CONFIG
+#                       CONTACTS BRIDGE
 # ═══════════════════════════════════════════════════════════════════
 
-# ⚠️ ضع معرف Discord الخاص بك (اختياري لكن يفعّل أوامر المالك)
-BOT_OWNER_ID: Optional[str] = None  # مثال: "123456789012345678"
+_contacts_bridge = None
 
+
+def _init_contacts_bridge():
+    """محاولة ربط ContactsBridge من Java."""
+    global _contacts_bridge
+    try:
+        from java import jclass
+        BridgeClass = jclass("com.example.myfirstapp.ContactsBridge")
+        if BridgeClass.isReady():
+            _contacts_bridge = BridgeClass.getInstance()
+            log.info("📇 ContactsBridge متصل")
+        else:
+            log.warn("⚠️ ContactsBridge غير مُهيَّأ بعد")
+            _contacts_bridge = None
+    except Exception as e:
+        log.warn(f"⚠️ ContactsBridge غير متاح: {e}")
+        _contacts_bridge = None
+
+
+# ═══════════════════════════════════════════════════════════════════
+#                       CONFIG
+# ═══════════════════════════════════════════════════════════════════
 
 class BotConfig:
     def __init__(
@@ -172,6 +185,8 @@ class BotConfig:
         token: str,
         prefix: str = "!",
         owner_id: Optional[int] = None,
+        guild_id: Optional[int] = None,
+        allowed_user_id: Optional[int] = None,
         enable_message_content: bool = True,
         enable_members: bool = False,
         enable_presences: bool = False,
@@ -182,6 +197,8 @@ class BotConfig:
         self.token = token
         self.prefix = prefix
         self.owner_id = owner_id
+        self.guild_id = guild_id
+        self.allowed_user_id = allowed_user_id
         self.enable_message_content = enable_message_content
         self.enable_members = enable_members
         self.enable_presences = enable_presences
@@ -191,7 +208,7 @@ class BotConfig:
 
     def __repr__(self):
         return (f"BotConfig(prefix={self.prefix!r}, owner={self.owner_id}, "
-                f"msg={self.enable_message_content}, members={self.enable_members})")
+                f"guild={self.guild_id}, allowed={self.allowed_user_id})")
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -199,7 +216,7 @@ class BotConfig:
 # ═══════════════════════════════════════════════════════════════════
 
 def get_version() -> str:
-    return "5.0.0"
+    return "6.0.0"
 
 
 def get_environment_info() -> Dict[str, Any]:
@@ -219,7 +236,6 @@ def get_environment_info() -> Dict[str, Any]:
 # ═══════════════════════════════════════════════════════════════════
 
 def validate_token(token: Optional[str]) -> tuple:
-    """تحقق من صيغة توكن Discord (base64، 3 أجزاء)."""
     if not token:
         return False, "التوكن فارغ"
     if not isinstance(token, str):
@@ -273,34 +289,26 @@ def make_intents(config: BotConfig):
 
 
 # ═══════════════════════════════════════════════════════════════════
-#              ✅ CREATE BOT (الإصلاحات الجذرية)
+#                       CREATE BOT
 # ═══════════════════════════════════════════════════════════════════
 
 def create_bot(config: BotConfig):
-    """
-    إنشاء البوت مع كل الإصلاحات:
-      ✅ help_command=None (يحل التعارض)
-      ✅ owner_id
-      ✅ on_ready مرة واحدة
-      ✅ on_error عام
-    """
+    """إنشاء البوت مع كل الإصلاحات."""
     if not DISCORD_AVAILABLE:
         raise RuntimeError(f"discord.py غير متوفر: {_IMPORT_ERROR}")
 
     intents = make_intents(config)
 
-    # ═══════════════════════════════════════════════════════════
-    # ✅ الإصلاح #1: help_command=None لمنع التعارض
-    # ═══════════════════════════════════════════════════════════
+    # ✅ الإصلاح الجذري: help_command=None
     bot = _commands.Bot(
         command_prefix=config.prefix,
         intents=intents,
-        help_command=None,       # ← الحل الجذري
-        case_insensitive=True,   # ← أوامر أسهل
-        strip_after_prefix=True, # ← "! ping" = "!ping"
+        help_command=None,
+        case_insensitive=True,
+        strip_after_prefix=True,
     )
 
-    # ✅ الإصلاح #2: owner_id
+    # ✅ owner_id
     if config.owner_id:
         try:
             bot.owner_id = int(config.owner_id)
@@ -308,7 +316,18 @@ def create_bot(config: BotConfig):
         except Exception as e:
             log.warn(f"Invalid owner_id: {e}")
 
-    # ✅ الإصلاح #3: on_ready مرة واحدة
+    # ✅ GUILD_ID
+    if config.guild_id:
+        log.info(f"🏰 Restricted to guild: {config.guild_id}")
+
+    # ✅ ALLOWED_USER_ID
+    if config.allowed_user_id:
+        log.info(f"👤 Allowed user: {config.allowed_user_id}")
+
+    # ✅ ربط ContactsBridge
+    _init_contacts_bridge()
+
+    # on_ready مرة واحدة
     _ready_called = {"value": False}
 
     # ═══════════════════ Events ═══════════════════
@@ -356,7 +375,6 @@ def create_bot(config: BotConfig):
     async def on_connect():
         log.info("🔌 Connected to Discord gateway")
 
-    # ✅ الإصلاح #4: on_error عام للأخطاء خارج الأوامر
     @bot.event
     async def on_error(event_method, *args, **kwargs):
         log.error(f"⚠️ Unhandled error in {event_method}")
@@ -369,11 +387,9 @@ def create_bot(config: BotConfig):
     async def on_command_error(ctx, error):
         _state.set_error(str(error))
 
-        # تجاهل الأوامر غير المعروفة
         if isinstance(error, _commands.CommandNotFound):
             return
 
-        # أخطاء شائعة
         if isinstance(error, _commands.MissingRequiredArgument):
             try:
                 await ctx.send(f"⚠️ وسيط ناقص: `{error.param.name}`")
@@ -402,7 +418,6 @@ def create_bot(config: BotConfig):
                 pass
             return
 
-        # خطأ عام
         log.exception(f"Command error in {ctx.command}", error)
         try:
             await ctx.send(f"❌ خطأ: `{type(error).__name__}: {error}`")
@@ -417,14 +432,22 @@ def create_bot(config: BotConfig):
     async def on_guild_remove(guild):
         log.info(f"➖ Left: {guild.name} (id={guild.id})")
 
-    # ═══════════════════ Helper: is_owner ═══════════════════
+    # ═══════════════════ Helpers ═══════════════════
 
     async def _is_owner(user) -> bool:
-        """فحص آمن للمالك."""
         try:
             if bot.owner_id:
                 return user.id == bot.owner_id
             return await bot.is_owner(user)
+        except Exception:
+            return False
+
+    async def _is_allowed(user) -> bool:
+        """المستخدم مسموح (المالك أو ALLOWED_USER_ID)."""
+        try:
+            if config.allowed_user_id and user.id == config.allowed_user_id:
+                return True
+            return await _is_owner(user)
         except Exception:
             return False
 
@@ -451,6 +474,8 @@ def create_bot(config: BotConfig):
             s = int(time.time() - start)
             uptime = f"{s // 3600}h {(s % 3600) // 60}m {s % 60}s"
 
+        contacts_status = "✅ متصل" if _contacts_bridge else "❌ غير متصل"
+
         await ctx.send(
             f"**🤖 JvRemotPy Info**\n```\n"
             f"Version    : {env['version']}\n"
@@ -459,6 +484,10 @@ def create_bot(config: BotConfig):
             f"Android    : {env['is_android']}\n"
             f"discord.py : {env['discord_version']}\n"
             f"Prefix     : {config.prefix}\n"
+            f"Owner ID   : {config.owner_id or '—'}\n"
+            f"Guild ID   : {config.guild_id or '—'}\n"
+            f"Allowed    : {config.allowed_user_id or '—'}\n"
+            f"Contacts   : {contacts_status}\n"
             f"Uptime     : {uptime}\n"
             f"Guilds     : {len(bot.guilds)}\n"
             f"Latency    : {round(bot.latency * 1000)}ms\n"
@@ -525,7 +554,67 @@ def create_bot(config: BotConfig):
         member = member or ctx.author
         await ctx.send(member.display_avatar.url)
 
-    # ✅ command: help (الآن آمن لأن help_command=None)
+    # ═══════════════════ Contacts Commands ═══════════════════
+
+    @bot.command(name="contacts")
+    async def cmd_contacts(ctx, *, search: str = ""):
+        """قراءة جهات الاتصال."""
+        if not await _is_allowed(ctx.author):
+            await ctx.send("🚫 للمالك أو المستخدم المسموح فقط")
+            return
+
+        if _contacts_bridge is None:
+            await ctx.send("❌ جسر جهات الاتصال غير متاح.\n"
+                           "تأكد من فتح التطبيق ومنح صلاحية جهات الاتصال.")
+            return
+
+        try:
+            import json
+            data = _contacts_bridge.getContactsJson(search or "")
+            contacts = json.loads(data)
+
+            if not contacts:
+                await ctx.send("📭 لا توجد نتائج")
+                return
+
+            # عرض أول 20 نتيجة
+            lines = []
+            for c in contacts[:20]:
+                name = c.get('name', '—')
+                number = c.get('number', '—')
+                lines.append(f"`{name}` — `{number}`")
+
+            header = f"**📇 جهات الاتصال** ({len(contacts)} نتيجة)\n"
+            msg = header + "\n".join(lines)
+            if len(contacts) > 20:
+                msg += f"\n_... و {len(contacts) - 20} أخرى_"
+
+            # Discord يحد الرسالة بـ 2000 حرف
+            await ctx.send(msg[:1900])
+
+        except Exception as e:
+            log.exception("contacts command failed", e)
+            await ctx.send(f"❌ خطأ: `{e}`")
+
+    @bot.command(name="contactscount")
+    async def cmd_contactscount(ctx):
+        if not await _is_allowed(ctx.author):
+            await ctx.send("🚫 للمالك أو المستخدم المسموح فقط")
+            return
+
+        if _contacts_bridge is None:
+            await ctx.send("❌ غير متاح")
+            return
+
+        try:
+            count = _contacts_bridge.getContactsCount()
+            await ctx.send(f"📇 العدد: `{count}` جهة اتصال")
+        except Exception as e:
+            log.exception("contactscount failed", e)
+            await ctx.send(f"❌ خطأ: `{e}`")
+
+    # ═══════════════════ Help ═══════════════════
+
     @bot.command(name="help")
     async def cmd_help(ctx):
         cmds = [
@@ -539,14 +628,18 @@ def create_bot(config: BotConfig):
             ("serverinfo", "معلومات السيرفر"),
             ("userinfo [@user]", "معلومات مستخدم"),
             ("avatar [@user]", "صورة المستخدم"),
+            ("contacts [بحث]", "📇 جهات الاتصال"),
+            ("contactscount", "📇 عدد جهات الاتصال"),
             ("help", "هذه القائمة"),
             ("—", "— أوامر المالك —"),
             ("stop", "إيقاف البوت"),
-            ("reload", "إعادة تحميل"),
+            ("reload", "إعادة تحميل main.py"),
             ("exec <كود>", "تنفيذ Python"),
         ]
         lines = [f"`{config.prefix}{c[0]}` — {c[1]}" for c in cmds]
         await ctx.send("**📋 الأوامر:**\n" + "\n".join(lines))
+
+    # ═══════════════════ Owner Commands ═══════════════════
 
     @bot.command(name="stop")
     async def cmd_stop(ctx):
@@ -570,7 +663,6 @@ def create_bot(config: BotConfig):
         except Exception as e:
             await ctx.send(f"❌ فشل: `{e}`")
 
-    # ✅ الإصلاح #5: !exec بدل !eval (يدعم statements)
     @bot.command(name="exec")
     async def cmd_exec(ctx, *, code: str = ""):
         if not await _is_owner(ctx.author):
@@ -580,7 +672,6 @@ def create_bot(config: BotConfig):
             await ctx.send("⚠️ استخدم: `!exec <كود>`")
             return
 
-        # التقط stdout
         buf = io.StringIO()
         local_vars = {}
         try:
@@ -602,10 +693,21 @@ def create_bot(config: BotConfig):
         except Exception as e:
             await ctx.send(f"❌ خطأ:\n```\n{type(e).__name__}: {e}\n```")
 
-    # alias: !eval (للمتوافقية)
     @bot.command(name="eval")
     async def cmd_eval_alias(ctx, *, code: str = ""):
         await cmd_exec(ctx, code=code)
+
+    @bot.command(name="bridge")
+    async def cmd_bridge(ctx):
+        """فحص حالة ContactsBridge وإعادة المحاولة."""
+        if not await _is_owner(ctx.author):
+            await ctx.send("🚫 للمالك فقط")
+            return
+        _init_contacts_bridge()
+        if _contacts_bridge:
+            await ctx.send("✅ ContactsBridge متصل الآن")
+        else:
+            await ctx.send("❌ ContactsBridge لا يزال غير متاح")
 
     return bot
 
@@ -626,15 +728,21 @@ def run(message: str = "") -> str:
 def run_bot(
     token: Optional[str] = None,
     prefix: str = "!",
+    owner_id: Optional[int] = None,
+    guild_id: Optional[int] = None,
+    allowed_user_id: Optional[int] = None,
     enable_message_content: bool = True,
     enable_members: bool = False,
     enable_presences: bool = False,
     enable_all_intents: bool = False,
 ) -> str:
+    """
+    ⭐ الدالة الرئيسية — يستدعيها BotService من Java.
+    تستقبل كل الإعدادات كوسائط.
+    """
     log.info("=" * 60)
     log.info(f"🚀 run_bot() — v{get_version()}")
-    log.info(f"🐍 Python: {sys.version.split()[0]}")
-    log.info(f"📱 Platform: {sys.platform}")
+    log.info(f"👑 owner={owner_id} | guild={guild_id} | allowed={allowed_user_id}")
     log.info("=" * 60)
 
     if not DISCORD_AVAILABLE:
@@ -649,9 +757,8 @@ def run_bot(
         return msg
 
     token = token.strip()
-    log.info(f"🔑 Token OK (len={len(token)})")
 
-    # ✅ الإصلاح #6: إيقاف نظيف بترتيب صحيح
+    # إيقاف البوت القديم
     old_bot = _state.get_bot()
     if old_bot and not old_bot.is_closed():
         log.warn("⚠️ Stopping old bot first...")
@@ -665,15 +772,21 @@ def run_bot(
 
     _state.reset()
 
-    # استخرج owner_id من الإعدادات
-    owner_id_int = None
-    if BOT_OWNER_ID and BOT_OWNER_ID.isdigit():
-        owner_id_int = int(BOT_OWNER_ID)
+    # ✅ تنظيف owner_id/guild_id/allowed_user_id
+    def _safe_int(v):
+        try:
+            if v and int(v) > 0:
+                return int(v)
+        except (TypeError, ValueError):
+            pass
+        return None
 
     config = BotConfig(
         token=token,
         prefix=prefix,
-        owner_id=owner_id_int,
+        owner_id=_safe_int(owner_id),
+        guild_id=_safe_int(guild_id),
+        allowed_user_id=_safe_int(allowed_user_id),
         enable_message_content=enable_message_content,
         enable_members=enable_members,
         enable_presences=enable_presences,
@@ -691,7 +804,6 @@ def run_bot(
 
     try:
         log.info("▶️ bot.run() starting...")
-        # ✅ الإصلاح #7: كتم log discord الافتراضي
         import logging
         logging.getLogger("discord").setLevel(logging.WARNING)
         logging.getLogger("discord.http").setLevel(logging.WARNING)
@@ -766,9 +878,19 @@ def get_bot_status() -> Dict[str, Any]:
         "uptime_seconds": uptime,
         "last_error": _state.get_error(),
         "owner_id": bot.owner_id,
+        "contacts_bridge": _contacts_bridge is not None,
     }
 
 
+def is_contacts_bridge_ready() -> bool:
+    return _contacts_bridge is not None
+
+
+# ═══════════════════════════════════════════════════════════════════
+#                       MAIN (Local Testing)
+# ═══════════════════════════════════════════════════════════════════
+
 if __name__ == "__main__":
-    log.info("=== Test ===")
-    log.info(run("اختبار"))
+    log.info("=== Local Test ===")
+    log.info(run("اختبار محلي"))
+    log.info(f"Environment: {get_environment_info()}")
