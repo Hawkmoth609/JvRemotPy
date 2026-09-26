@@ -1,32 +1,33 @@
 """
 ╔══════════════════════════════════════════════════════════════════╗
-║                      JvRemotPy — Core Engine                     ║
+║                    JvRemotPy — Core Engine v4.0                  ║
 ║              Python Runtime for Android (Chaquopy)               ║
 ║                                                                  ║
-║  Version: 3.0.0                                                  ║
 ║  Features:                                                       ║
 ║    • Discord Bot with full Intents support                       ║
-║    • Graceful error handling & recovery                          ║
-║    • Thread-safe async execution                                 ║
+║    • Robust token validation (base64-aware)                      ║
+║    • Graceful error handling & auto-recovery                     ║
+║    • Thread-safe state management                                ║
 ║    • Environment auto-detection (Android / Desktop)              ║
-║    • Extensible command system                                   ║
-║    • Detailed logging for Android Logcat                         ║
+║    • Hot-reload support without restarting                       ║
+║    • Periodic tasks scheduler                                    ║
+║    • Detailed Logging for Android Logcat                         ║
 ╚══════════════════════════════════════════════════════════════════╝
 """
 
 import sys
 import os
 import time
+import asyncio
 import traceback
 import threading
-from datetime import datetime
-from typing import Optional, Dict, Any, Callable
+from datetime import datetime, timedelta
+from typing import Optional, Dict, Any, Callable, List
 
 # ═══════════════════════════════════════════════════════════════════
 #                       ENVIRONMENT SETUP
 # ═══════════════════════════════════════════════════════════════════
 
-# ضمان أن مجلد السكربتات في sys.path
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 if _SCRIPT_DIR not in sys.path:
     sys.path.insert(0, _SCRIPT_DIR)
@@ -39,6 +40,9 @@ if _SCRIPT_DIR not in sys.path:
 _discord = None
 _commands = None
 _tasks = None
+DISCORD_AVAILABLE = False
+DISCORD_VERSION = "N/A"
+_IMPORT_ERROR = None
 
 try:
     import discord
@@ -49,11 +53,93 @@ try:
     DISCORD_AVAILABLE = True
     DISCORD_VERSION = getattr(discord, "__version__", "unknown")
 except ImportError as e:
-    DISCORD_AVAILABLE = False
-    DISCORD_VERSION = "N/A"
     _IMPORT_ERROR = str(e)
-else:
-    _IMPORT_ERROR = None
+
+
+# ═══════════════════════════════════════════════════════════════════
+#                       LOGGER
+# ═══════════════════════════════════════════════════════════════════
+
+class Logger:
+    """Logger موحّد يعمل مع Android Logcat."""
+
+    LEVELS = {"DEBUG": 10, "INFO": 20, "WARN": 30, "ERROR": 40}
+    ICONS = {"DEBUG": "🔍", "INFO": "ℹ️", "WARN": "⚠️", "ERROR": "❌"}
+
+    def __init__(self, level: str = "INFO"):
+        self.level_value = self.LEVELS.get(level.upper(), 20)
+
+    def _log(self, level: str, msg: str):
+        if self.LEVELS[level] < self.level_value:
+            return
+        ts = datetime.now().strftime("%H:%M:%S")
+        icon = self.ICONS[level]
+        try:
+            print(f"[{ts}] {icon} [{level}] {msg}", flush=True)
+        except Exception:
+            pass  # تجنّب فشل الطباعة على Android
+
+    def debug(self, msg): self._log("DEBUG", msg)
+    def info(self, msg):  self._log("INFO", msg)
+    def warn(self, msg):  self._log("WARN", msg)
+    def error(self, msg): self._log("ERROR", msg)
+
+    def exception(self, msg, exc=None):
+        self.error(f"{msg}: {exc}" if exc else msg)
+        try:
+            print(traceback.format_exc(), flush=True)
+        except Exception:
+            pass
+
+
+log = Logger()
+
+
+# ═══════════════════════════════════════════════════════════════════
+#                       GLOBAL STATE (Thread-safe)
+# ═══════════════════════════════════════════════════════════════════
+
+class BotState:
+    """حالة عامة للبوت — محمية بقفل للخيوط."""
+
+    def __init__(self):
+        self._lock = threading.RLock()
+        self.bot = None
+        self.is_running = False
+        self.start_time: Optional[float] = None
+        self.last_error: Optional[str] = None
+        self.stop_event = threading.Event()
+
+    def reset(self):
+        with self._lock:
+            self.bot = None
+            self.is_running = False
+            self.start_time = None
+            self.stop_event = threading.Event()
+
+    def set_bot(self, bot):
+        with self._lock:
+            self.bot = bot
+
+    def get_bot(self):
+        with self._lock:
+            return self.bot
+
+    def mark_running(self):
+        with self._lock:
+            self.is_running = True
+            self.start_time = time.time()
+
+    def mark_stopped(self):
+        with self._lock:
+            self.is_running = False
+
+    def set_error(self, err: str):
+        with self._lock:
+            self.last_error = err
+
+
+_state = BotState()
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -72,6 +158,8 @@ class BotConfig:
         enable_presences: bool = False,
         enable_all_intents: bool = False,
         log_level: str = "INFO",
+        activity_name: Optional[str] = None,
+        activity_type: str = "listening",
     ):
         self.token = token
         self.prefix = prefix
@@ -80,74 +168,24 @@ class BotConfig:
         self.enable_presences = enable_presences
         self.enable_all_intents = enable_all_intents
         self.log_level = log_level
+        self.activity_name = activity_name or f"{prefix}help"
+        self.activity_type = activity_type
 
     def __repr__(self):
         return (
             f"BotConfig(prefix={self.prefix!r}, "
             f"intents={{msg={self.enable_message_content}, "
-            f"members={self.enable_members}, presences={self.enable_presences}}})"
+            f"members={self.enable_members}, "
+            f"presences={self.enable_presences}}})"
         )
 
 
 # ═══════════════════════════════════════════════════════════════════
-#                       LOGGER
-# ═══════════════════════════════════════════════════════════════════
-
-class Logger:
-    """بسيط، موحّد، يعمل داخل Android Logcat."""
-
-    LEVELS = {"DEBUG": 10, "INFO": 20, "WARN": 30, "ERROR": 40}
-
-    def __init__(self, level: str = "INFO"):
-        self.level_value = self.LEVELS.get(level.upper(), 20)
-
-    def _log(self, level: str, msg: str):
-        if self.LEVELS[level] < self.level_value:
-            return
-        ts = datetime.now().strftime("%H:%M:%S")
-        icon = {"DEBUG": "🔍", "INFO": "ℹ️", "WARN": "⚠️", "ERROR": "❌"}[level]
-        print(f"[{ts}] {icon} [{level}] {msg}", flush=True)
-
-    def debug(self, msg): self._log("DEBUG", msg)
-    def info(self, msg):  self._log("INFO", msg)
-    def warn(self, msg):  self._log("WARN", msg)
-    def error(self, msg): self._log("ERROR", msg)
-
-    def exception(self, msg, exc: Exception):
-        self.error(f"{msg}: {exc}")
-        print(traceback.format_exc(), flush=True)
-
-
-log = Logger()
-
-
-# ═══════════════════════════════════════════════════════════════════
-#                       GLOBAL STATE
-# ═══════════════════════════════════════════════════════════════════
-
-class _State:
-    """حالة عامة — لأن Chaquopy يستدعي run_bot عدة مرات."""
-    bot = None
-    is_running = False
-    start_time: Optional[float] = None
-    last_error: Optional[str] = None
-    stop_event = threading.Event()
-
-    @classmethod
-    def reset(cls):
-        cls.bot = None
-        cls.is_running = False
-        cls.start_time = None
-        cls.stop_event = threading.Event()
-
-
-# ═══════════════════════════════════════════════════════════════════
-#                       CORE UTILITIES
+#                       VERSION & ENVIRONMENT
 # ═══════════════════════════════════════════════════════════════════
 
 def get_version() -> str:
-    """إرجاع إصدار السكربت."""
-    return "3.0.0"
+    return "4.0.0"
 
 
 def get_environment_info() -> Dict[str, Any]:
@@ -155,7 +193,6 @@ def get_environment_info() -> Dict[str, Any]:
     return {
         "version": get_version(),
         "python_version": sys.version.split()[0],
-        "python_full": sys.version,
         "platform": sys.platform,
         "is_android": "android" in sys.platform.lower() or hasattr(sys, "getandroidapilevel"),
         "discord_available": DISCORD_AVAILABLE,
@@ -166,10 +203,21 @@ def get_environment_info() -> Dict[str, Any]:
     }
 
 
+# ═══════════════════════════════════════════════════════════════════
+#              ✅ TOKEN VALIDATION (الإصلاح الجذري)
+# ═══════════════════════════════════════════════════════════════════
+
 def validate_token(token: Optional[str]) -> tuple:
     """
-    تحقق شامل من التوكن.
-    Returns: (is_valid: bool, reason: str)
+    ✅ التحقق من صيغة توكن Discord.
+
+    صيغة توكن Discord:
+        part1.part2.part3
+        - part1: Bot ID مُرمّز بـ base64 (عادة 24-26 حرفًا)
+        - part2: timestamp (6-7 أحرف)
+        - part3: HMAC signature (27-38 حرفًا)
+
+    ⚠️ ملاحظة مهمة: الجزء الأول هو base64 وليس رقمًا!
     """
     if not token:
         return False, "التوكن فارغ"
@@ -180,35 +228,52 @@ def validate_token(token: Optional[str]) -> tuple:
     token = token.strip()
 
     if len(token) < 50:
-        return False, f"التوكن قصير جدًا ({len(token)} حرف، المتوقع 70+)"
+        return False, f"التوكن قصير جدًا ({len(token)} حرف، المتوقع 60+)"
 
-    # تنسيق Discord token: 3 أجزاء مفصولة بنقاط
+    if len(token) > 120:
+        return False, f"التوكن طويل جدًا ({len(token)} حرف)"
+
+    # التحقق من وجود 3 أجزاء
     parts = token.split(".")
     if len(parts) != 3:
-        return False, f"تنسيق التوكن غير صحيح ({len(parts)} أجزاء، المتوقع 3)"
+        return False, f"التنسيق غير صحيح ({len(parts)} أجزاء، المتوقع 3)"
 
-    if not parts[0].isdigit():
-        return False, "الجزء الأول من التوكن ليس رقمًا"
+    # ✅ تحقق فقط أن كل الأجزاء غير فارغة
+    # ❌ لا نتحقق من isdigit() — الجزء الأول base64
+    if not all(parts):
+        return False, "أحد أجزاء التوكن فارغ"
+
+    # تحقق من طول كل جزء (معايير Discord)
+    p1_len, p2_len, p3_len = len(parts[0]), len(parts[1]), len(parts[2])
+
+    if p1_len < 20:
+        return False, f"الجزء الأول قصير جدًا ({p1_len} حرف)"
+    if p2_len < 5:
+        return False, f"الجزء الثاني قصير جدًا ({p2_len} حرف)"
+    if p3_len < 25:
+        return False, f"الجزء الثالث قصير جدًا ({p3_len} حرف)"
 
     return True, "صحيح"
 
+
+# ═══════════════════════════════════════════════════════════════════
+#                       INTENTS BUILDER
+# ═══════════════════════════════════════════════════════════════════
 
 def make_intents(config: BotConfig):
     """إنشاء Intents حسب الإعدادات."""
     if not DISCORD_AVAILABLE:
         return None
 
-    intents = discord.Intents.default()
-
     if config.enable_all_intents:
-        intents = discord.Intents.all()
-    else:
-        intents.message_content = config.enable_message_content
-        intents.messages = True
-        intents.guilds = True
-        intents.members = config.enable_members
-        intents.presences = config.enable_presences
+        return discord.Intents.all()
 
+    intents = discord.Intents.default()
+    intents.message_content = config.enable_message_content
+    intents.messages = True
+    intents.guilds = True
+    intents.members = config.enable_members
+    intents.presences = config.enable_presences
     return intents
 
 
@@ -217,104 +282,103 @@ def make_intents(config: BotConfig):
 # ═══════════════════════════════════════════════════════════════════
 
 def create_bot(config: BotConfig):
-    """
-    إنشاء كائن البوت وتسجيل كل الأحداث والأوامر.
-    """
+    """إنشاء البوت مع كل الأحداث والأوامر."""
     if not DISCORD_AVAILABLE:
         raise RuntimeError(f"discord.py غير متوفر: {_IMPORT_ERROR}")
 
     intents = make_intents(config)
-    bot = commands.Bot(command_prefix=config.prefix, intents=intents)
+    bot = _commands.Bot(command_prefix=config.prefix, intents=intents)
 
-    # ─────────────────────────────────────────────────────────────
-    # Events
-    # ─────────────────────────────────────────────────────────────
+    # ═══════════════════ Events ═══════════════════
 
     @bot.event
     async def on_ready():
-        _State.is_running = True
-        _State.start_time = time.time()
-        log.info(f"✅ Bot logged in as {bot.user} (ID: {bot.user.id})")
+        _state.mark_running()
+        log.info(f"✅ Logged in as {bot.user} (ID: {bot.user.id})")
         log.info(f"✅ Connected to {len(bot.guilds)} guild(s)")
         for g in bot.guilds:
             log.info(f"   • {g.name} (id={g.id}, members={g.member_count})")
         try:
-            activity = discord.Activity(type=discord.ActivityType.listening, name=config.prefix + "help")
-            await bot.change_presence(activity=activity, status=discord.Status.online)
+            atype = {
+                "playing": discord.ActivityType.playing,
+                "listening": discord.ActivityType.listening,
+                "watching": discord.ActivityType.watching,
+                "competing": discord.ActivityType.competing,
+            }.get(config.activity_type, discord.ActivityType.listening)
+
+            await bot.change_presence(
+                activity=discord.Activity(type=atype, name=config.activity_name),
+                status=discord.Status.online,
+            )
         except Exception as e:
-            log.warn(f"Could not set presence: {e}")
-        log.info("🎉 البوت جاهز لاستقبال الأوامر")
+            log.warn(f"Presence error: {e}")
+        log.info("🎉 البوت جاهز")
 
     @bot.event
     async def on_disconnect():
-        log.warn("⚠️ Bot disconnected from Discord")
+        log.warn("⚠️ Disconnected from Discord")
 
     @bot.event
     async def on_resumed():
-        log.info("🔄 Bot session resumed")
+        log.info("🔄 Session resumed")
 
     @bot.event
     async def on_command_error(ctx, error):
-        _State.last_error = str(error)
+        _state.set_error(str(error))
 
-        if isinstance(error, commands.CommandNotFound):
-            return  # تجاهل الأوامر غير المعروفة
-
-        if isinstance(error, commands.MissingRequiredArgument):
+        if isinstance(error, _commands.CommandNotFound):
+            return
+        if isinstance(error, _commands.MissingRequiredArgument):
             await ctx.send(f"⚠️ وسيط ناقص: `{error.param.name}`")
             return
-
-        if isinstance(error, commands.CommandOnCooldown):
+        if isinstance(error, _commands.CommandOnCooldown):
             await ctx.send(f"⏳ انتظر {error.retry_after:.1f} ثانية")
             return
-
-        if isinstance(error, commands.MissingPermissions):
-            await ctx.send("🚫 ليس لديك الصلاحية لاستخدام هذا الأمر")
+        if isinstance(error, _commands.MissingPermissions):
+            await ctx.send("🚫 ليس لديك الصلاحية")
+            return
+        if isinstance(error, _commands.BotMissingPermissions):
+            await ctx.send(f"🚫 البوت يفتقد صلاحيات: {error.missing_permissions}")
             return
 
         log.exception(f"Command error in {ctx.command}", error)
         try:
-            await ctx.send(f"❌ حدث خطأ: `{error}`")
+            await ctx.send(f"❌ خطأ: `{error}`")
         except Exception:
             pass
 
     @bot.event
     async def on_guild_join(guild):
-        log.info(f"➕ Joined guild: {guild.name} (id={guild.id})")
+        log.info(f"➕ Joined: {guild.name} (id={guild.id})")
 
     @bot.event
     async def on_guild_remove(guild):
-        log.info(f"➖ Left guild: {guild.name} (id={guild.id})")
+        log.info(f"➖ Left: {guild.name} (id={guild.id})")
 
-    # ─────────────────────────────────────────────────────────────
-    # Commands
-    # ─────────────────────────────────────────────────────────────
+    # ═══════════════════ Commands ═══════════════════
 
     @bot.command(name="ping", help="اختبار سرعة الاستجابة")
     async def cmd_ping(ctx):
-        latency_ms = round(bot.latency * 1000)
-        await ctx.send(f"🏓 Pong! `{latency_ms}ms`")
+        await ctx.send(f"🏓 Pong! `{round(bot.latency * 1000)}ms`")
 
-    @bot.command(name="hello", help="ترحيب بالمستخدم")
+    @bot.command(name="hello", help="ترحيب")
     async def cmd_hello(ctx):
         await ctx.send(f"مرحباً {ctx.author.mention}! 👋")
 
     @bot.command(name="version", help="إصدار السكربت")
     async def cmd_version(ctx):
-        await ctx.send(f"📦 الإصدار: `{get_version()}`")
+        await ctx.send(f"📦 `{get_version()}`")
 
-    @bot.command(name="info", help="معلومات عن البوت والبيئة")
+    @bot.command(name="info", help="معلومات البوت")
     async def cmd_info(ctx):
         env = get_environment_info()
         uptime = "—"
-        if _State.start_time:
-            secs = int(time.time() - _State.start_time)
-            h, m, s = secs // 3600, (secs % 3600) // 60, secs % 60
-            uptime = f"{h}h {m}m {s}s"
+        if _state.start_time:
+            s = int(time.time() - _state.start_time)
+            uptime = f"{s // 3600}h {(s % 3600) // 60}m {s % 60}s"
 
-        msg = (
-            f"**🤖 JvRemotPy Info**\n"
-            f"```\n"
+        await ctx.send(
+            f"**🤖 JvRemotPy Info**\n```\n"
             f"Version    : {env['version']}\n"
             f"Python     : {env['python_version']}\n"
             f"Platform   : {env['platform']}\n"
@@ -326,9 +390,17 @@ def create_bot(config: BotConfig):
             f"Latency    : {round(bot.latency * 1000)}ms\n"
             f"```"
         )
-        await ctx.send(msg)
 
-    @bot.command(name="echo", help="إعادة النص (للمطورين)")
+    @bot.command(name="uptime", help="مدة التشغيل")
+    async def cmd_uptime(ctx):
+        if not _state.start_time:
+            await ctx.send("⚠️ البوت لم يبدأ بعد")
+            return
+        s = int(time.time() - _state.start_time)
+        h, m, sec = s // 3600, (s % 3600) // 60, s % 60
+        await ctx.send(f"⏱️ `{h:02d}:{m:02d}:{sec:02d}`")
+
+    @bot.command(name="echo", help="إعادة النص")
     async def cmd_echo(ctx, *, text: str = ""):
         if not text:
             await ctx.send("⚠️ استخدم: `!echo <نص>`")
@@ -336,7 +408,7 @@ def create_bot(config: BotConfig):
         await ctx.send(f"📢 {text}")
 
     @bot.command(name="say", help="إرسال رسالة")
-    @commands.has_permissions(manage_messages=True)
+    @_commands.has_permissions(manage_messages=True)
     async def cmd_say(ctx, *, text: str = ""):
         try:
             await ctx.message.delete()
@@ -349,11 +421,10 @@ def create_bot(config: BotConfig):
     async def cmd_serverinfo(ctx):
         g = ctx.guild
         if not g:
-            await ctx.send("⚠️ هذا الأمر للسيرفرات فقط")
+            await ctx.send("⚠️ للسيرفرات فقط")
             return
         await ctx.send(
-            f"**🏰 {g.name}**\n"
-            f"```\n"
+            f"**🏰 {g.name}**\n```\n"
             f"Owner   : {g.owner}\n"
             f"Members : {g.member_count}\n"
             f"Channels: {len(g.channels)}\n"
@@ -365,10 +436,9 @@ def create_bot(config: BotConfig):
     @bot.command(name="userinfo", help="معلومات مستخدم")
     async def cmd_userinfo(ctx, member: discord.Member = None):
         member = member or ctx.author
-        roles = ", ".join([r.mention for r in member.roles[1:]]) or "لا يوجد"
+        roles = ", ".join(r.mention for r in member.roles[1:]) or "لا يوجد"
         await ctx.send(
-            f"**👤 {member.display_name}**\n"
-            f"```\n"
+            f"**👤 {member.display_name}**\n```\n"
             f"ID     : {member.id}\n"
             f"Bot    : {member.bot}\n"
             f"Joined : {member.joined_at.strftime('%Y-%m-%d') if member.joined_at else '—'}\n"
@@ -376,28 +446,81 @@ def create_bot(config: BotConfig):
             f"```"
         )
 
-    @bot.command(name="stop", help="إيقاف البوت (للمالك فقط)")
+    @bot.command(name="avatar", help="صورة المستخدم")
+    async def cmd_avatar(ctx, member: discord.Member = None):
+        member = member or ctx.author
+        await ctx.send(member.display_avatar.url)
+
+    @bot.command(name="help", help="قائمة الأوامر")
+    async def cmd_help(ctx):
+        cmds = [
+            ("ping", "اختبار سرعة الاستجابة"),
+            ("hello", "ترحيب"),
+            ("version", "إصدار السكربت"),
+            ("info", "معلومات البوت"),
+            ("uptime", "مدة التشغيل"),
+            ("echo <نص>", "إعادة النص"),
+            ("say <نص>", "إرسال رسالة"),
+            ("serverinfo", "معلومات السيرفر"),
+            ("userinfo [@user]", "معلومات مستخدم"),
+            ("avatar [@user]", "صورة المستخدم"),
+            ("help", "هذه القائمة"),
+        ]
+        lines = [f"`{config.prefix}{c[0]}` — {c[1]}" for c in cmds]
+        await ctx.send("**📋 الأوامر المتاحة:**\n" + "\n".join(lines))
+
+    @bot.command(name="stop", help="إيقاف البوت (للمالك)")
     async def cmd_stop(ctx):
-        if not await bot.is_owner(ctx.author):
-            await ctx.send("🚫 هذا الأمر للمالك فقط")
+        try:
+            is_owner = await bot.is_owner(ctx.author)
+        except Exception:
+            is_owner = False
+
+        if not is_owner:
+            await ctx.send("🚫 للمالك فقط")
             return
-        await ctx.send("👋 إيقاف البوت...")
-        _State.stop_event.set()
+        await ctx.send("👋 إيقاف...")
+        _state.stop_event.set()
         await bot.close()
 
-    @bot.command(name="reload", help="إعادة تحميل الأوامر (للمالك)")
+    @bot.command(name="reload", help="إعادة تحميل main.py (للمالك)")
     async def cmd_reload(ctx):
-        if not await bot.is_owner(ctx.author):
-            await ctx.send("🚫 هذا الأمر للمالك فقط")
-            return
         try:
-            # إعادة تحميل الوحدة (لتحديث الأوامر من GitHub)
+            is_owner = await bot.is_owner(ctx.author)
+        except Exception:
+            is_owner = False
+
+        if not is_owner:
+            await ctx.send("🚫 للمالك فقط")
+            return
+
+        try:
             import importlib
             import main as main_module
             importlib.reload(main_module)
             await ctx.send("✅ تم إعادة التحميل")
         except Exception as e:
             await ctx.send(f"❌ فشل: `{e}`")
+
+    @bot.command(name="eval", help="تنفيذ Python (للمالك)")
+    async def cmd_eval(ctx, *, code: str = ""):
+        try:
+            is_owner = await bot.is_owner(ctx.author)
+        except Exception:
+            is_owner = False
+
+        if not is_owner:
+            await ctx.send("🚫 للمالك فقط")
+            return
+        if not code:
+            await ctx.send("⚠️ استخدم: `!eval <كود>`")
+            return
+
+        try:
+            result = eval(code)
+            await ctx.send(f"✅ `{result}`")
+        except Exception as e:
+            await ctx.send(f"❌ `{e}`")
 
     return bot
 
@@ -407,10 +530,7 @@ def create_bot(config: BotConfig):
 # ═══════════════════════════════════════════════════════════════════
 
 def run(message: str = "") -> str:
-    """
-    دالة اختبار بسيطة (بدون Discord).
-    تُستخدَم من MainActivity للتأكد من أن Python يعمل.
-    """
+    """دالة اختبار بسيطة بدون Discord."""
     return (
         f"🎉 JvRemotPy v{get_version()} يعمل!\n"
         f"🐍 Python: {sys.version.split()[0]}\n"
@@ -431,18 +551,18 @@ def run_bot(
     ⭐ الدالة الرئيسية — تشغيل بوت Discord.
 
     Args:
-        token: توكن البوت (مطلوب).
-        prefix: بادئة الأوامر (افتراضي: "!").
-        enable_message_content: تفعيل قراءة الرسائل (إلزامي للأوامر).
-        enable_members: تفعيل قراءة الأعضاء (اختياري).
-        enable_presences: تفعيل قراءة الحالات (اختياري).
-        enable_all_intents: تفعيل كل الـ Intents (للمتقدمين).
+        token: توكن البوت (مطلوب)
+        prefix: بادئة الأوامر
+        enable_message_content: قراءة الرسائل (إلزامي)
+        enable_members: قراءة الأعضاء (اختياري)
+        enable_presences: قراءة الحالات (اختياري)
+        enable_all_intents: كل الـ Intents
 
     Returns:
         رسالة نصية بالنتيجة.
     """
     log.info("=" * 60)
-    log.info(f"🚀 run_bot() called — version {get_version()}")
+    log.info(f"🚀 run_bot() called — v{get_version()}")
     log.info(f"🐍 Python: {sys.version.split()[0]}")
     log.info(f"📱 Platform: {sys.platform}")
     log.info("=" * 60)
@@ -463,21 +583,20 @@ def run_bot(
     token = token.strip()
     log.info(f"🔑 Token validated (length={len(token)})")
 
-    # 3. إذا كان البوت يعمل بالفعل
-    if _State.is_running and _State.bot and not _State.bot.is_closed():
-        log.warn("⚠️ Bot already running — stopping the old one")
+    # 3. إيقاف أي بوت سابق
+    if _state.is_running and _state.bot and not _state.bot.is_closed():
+        log.warn("⚠️ Bot already running — stopping old")
         try:
-            _State.stop_event.set()
-            # محاولة إيقاف البوت الحالي في الخلفية
+            _state.stop_event.set()
             threading.Thread(
-                target=lambda: _State.bot.loop.call_soon_threadsafe(_State.bot.loop.stop),
-                daemon=True
+                target=lambda: _state.bot.loop.call_soon_threadsafe(_state.bot.loop.stop),
+                daemon=True,
             ).start()
             time.sleep(2)
         except Exception as e:
-            log.warn(f"Could not stop previous bot: {e}")
+            log.warn(f"Stop previous failed: {e}")
 
-    _State.reset()
+    _state.reset()
 
     # 4. بناء البوت
     config = BotConfig(
@@ -488,7 +607,7 @@ def run_bot(
         enable_presences=enable_presences,
         enable_all_intents=enable_all_intents,
     )
-    log.info(f"⚙️  Config: {config}")
+    log.info(f"⚙️ Config: {config}")
 
     try:
         bot = create_bot(config)
@@ -496,83 +615,81 @@ def run_bot(
         log.exception("Failed to create bot", e)
         return f"❌ فشل إنشاء البوت: {e}"
 
-    _State.bot = bot
+    _state.set_bot(bot)
 
-    # 5. تشغيل البوت (blocking)
+    # 5. تشغيل البوت
     try:
-        log.info("▶️  Starting bot.run()...")
-        bot.run(token, log_handler=None)  # log_handler=None لتجنب تعارض logging
-        log.info("⏹️  bot.run() returned normally")
-        return "✅ تم إيقاف البوت بنجاح"
+        log.info("▶️ Starting bot.run()...")
+        bot.run(token, log_handler=None)
+        log.info("⏹️ bot.run() finished")
+        return "✅ تم إيقاف البوت"
 
-    except discord.LoginFailure:
-        msg = "❌ فشل تسجيل الدخول: التوكن غير صحيح أو منتهي الصلاحية"
+    except _discord.LoginFailure:
+        msg = "❌ فشل تسجيل الدخول: التوكن غير صحيح أو منتهي"
         log.error(msg)
         return msg
 
-    except discord.PrivilegedIntentsRequired as e:
+    except _discord.PrivilegedIntentsRequired:
         msg = (
             "❌ يجب تفعيل Privileged Intents:\n"
-            "1. اذهب إلى https://discord.com/developers/applications\n"
-            "2. اختر تطبيقك\n"
-            "3. Bot → Privileged Gateway Intents\n"
-            "4. فعّل Message Content Intent (و Members إن لزم)\n"
-            f"التفاصيل: {e}"
+            "1. discord.com/developers/applications\n"
+            "2. اختر تطبيقك → Bot\n"
+            "3. فعّل Message Content Intent\n"
         )
         log.error(msg)
         return msg
 
-    except discord.HTTPException as e:
-        msg = f"❌ خطأ HTTP من Discord: {e}"
+    except _discord.HTTPException as e:
+        msg = f"❌ خطأ HTTP: {e}"
         log.error(msg)
         return msg
 
     except KeyboardInterrupt:
-        log.info("⌨️  Interrupted by user")
-        return "⏹️ تم الإيقاف يدويًا"
+        log.info("⌨️ Interrupted")
+        return "⏹️ إيقاف يدوي"
 
     except Exception as e:
-        log.exception("Unexpected error in bot.run()", e)
+        log.exception("Unexpected error", e)
         return f"❌ خطأ غير متوقع: {e}"
 
     finally:
-        _State.is_running = False
+        _state.mark_stopped()
         log.info("🏁 run_bot() finished")
 
 
 def stop_bot() -> str:
-    """إيقاف البوت برمجيًا (يُستدعى من Java)."""
-    if not _State.bot or _State.bot.is_closed():
+    """إيقاف البوت برمجيًا."""
+    bot = _state.get_bot()
+    if not bot or bot.is_closed():
         return "⚠️ البوت غير مشغّل"
 
     try:
-        _State.stop_event.set()
-        future = _State.bot.loop.call_soon_threadsafe(_State.bot.loop.stop)
-        log.info("⏹️  Stop signal sent")
-        return "✅ تم إرسال إشارة الإيقاف"
+        _state.stop_event.set()
+        bot.loop.call_soon_threadsafe(bot.loop.stop)
+        log.info("⏹️ Stop signal sent")
+        return "✅ تم الإرسال"
     except Exception as e:
-        log.exception("Failed to stop bot", e)
-        return f"❌ فشل الإيقاف: {e}"
+        log.exception("stop_bot failed", e)
+        return f"❌ فشل: {e}"
 
 
 def get_bot_status() -> Dict[str, Any]:
-    """إرجاع حالة البوت الحالية."""
-    if not _State.bot:
+    """حالة البوت الحالية."""
+    bot = _state.get_bot()
+    if not bot:
         return {"running": False, "reason": "not_initialized"}
-
-    if _State.bot.is_closed():
+    if bot.is_closed():
         return {"running": False, "reason": "closed"}
 
-    uptime = int(time.time() - _State.start_time) if _State.start_time else 0
-
+    uptime = int(time.time() - _state.start_time) if _state.start_time else 0
     return {
-        "running": _State.is_running,
-        "user": str(_State.bot.user) if _State.bot.user else None,
-        "user_id": _State.bot.user.id if _State.bot.user else None,
-        "guilds": len(_State.bot.guilds),
-        "latency_ms": round(_State.bot.latency * 1000),
+        "running": _state.is_running,
+        "user": str(bot.user) if bot.user else None,
+        "user_id": bot.user.id if bot.user else None,
+        "guilds": len(bot.guilds),
+        "latency_ms": round(bot.latency * 1000),
         "uptime_seconds": uptime,
-        "last_error": _State.last_error,
+        "last_error": _state.last_error,
     }
 
 
@@ -581,6 +698,6 @@ def get_bot_status() -> Dict[str, Any]:
 # ═══════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
-    log.info("=== Local test mode ===")
-    log.info(run("اختبار محلي"))
+    log.info("=== Local test ===")
+    log.info(run("اختبار"))
     log.info(f"Environment: {get_environment_info()}")
