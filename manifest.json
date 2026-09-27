@@ -1,7 +1,7 @@
 {
-  "version": "7.1.0",
+  "version": "8.0.0",
   "schema_version": 2,
-  "generated_at": "2026-09-26T16:00:00Z",
+  "generated_at": "2026-09-27T12:00:00Z",
   "min_app_version": "1.0",
   "min_python_version": "3.11",
   "min_discord_py": "2.4.0",
@@ -65,11 +65,30 @@
 
   "changelog": [
     {
+      "version": "8.0.0",
+      "date": "2026-09-27",
+      "breaking": false,
+      "changes": [
+        "🔴 إصلاح جذري: إزالة extractPackages 'aiohttp' من build.gradle لمنع SIGSEGV على هواوي",
+        "🔴 إصلاح جذري: الرجوع إلى aiohttp==3.10.5 (النسخة المستقرة)",
+        "🔴 إصلاح جذري: نقل Python.start() من JvApplication إلى MainActivity على Main Thread",
+        "🟡 تبسيط MainActivity: إزالة InitState و BackgroundInit لتفادي race conditions",
+        "🟡 DiscordBotService: استخدام startForegroundService على Android 12+",
+        "🟡 PermissionManager: يقبل Context بدل Activity فقط",
+        "🟢 bridge.py: clear_helper_cache() عند set_context() لمنع تسريب الـ cache",
+        "🟢 hawkmoth_bot.py: start_bot() يقبل كل الوسائط من Java",
+        "🟢 hawkmoth_bot.py: get_version() تقرأ من SharedPreferences",
+        "🟢 hawkmoth_bot.py: تفعيل message_content intent",
+        "🟢 توحيد معمارية الإصدارات: main.py = wrapper، hawkmoth_bot.py = المنطق الكامل",
+        "🟢 إزالة التوكن المدمج نهائيًا — يُمرر من Java فقط"
+      ]
+    },
+    {
       "version": "7.1.0",
       "date": "2026-09-26",
       "breaking": true,
       "changes": [
-        " إزالة التوكن المكشوف من hawkmoth_bot.py",
+        "إزالة التوكن المكشوف من hawkmoth_bot.py",
         "توحيد المعمارية: main.py = wrapper، hawkmoth_bot.py = المنطق",
         "استقبال التوكن من Java عبر start_bot(token, ...)",
         "تفعيل message_content intent",
