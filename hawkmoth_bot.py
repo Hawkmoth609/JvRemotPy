@@ -277,7 +277,6 @@ def _discover_storage_roots():
         seen.add(rp)
         roots.append(rp)
 
-    # من bridge
     if _BRIDGE_AVAILABLE and _bridge is not None:
         try:
             files_dir = _bridge.get_files_dir()
@@ -353,7 +352,6 @@ HAS_NOTIF_ACCESS = _check_notification_access()
 
 DEVICE_NAME = socket.gethostname() or "Android"
 
-# مسارات شائعة
 CAMERA_PATHS = [
     "DCIM/Camera", "DCIM/camera", "DCIM/Camera/RAW",
     "Pictures/Camera", "Pictures/Photos",
@@ -372,7 +370,6 @@ WHATSAPP_MEDIA_PATHS = [
     "Android/media/com.whatsapp.w4b/WhatsApp Business/Media",
 ]
 
-# خرائط وأقفال
 _path_map = {}
 _path_counter = [0]
 _path_lock = threading.Lock()
@@ -383,7 +380,6 @@ _notif_seen = set()
 _notif_task = None
 _notif_lock = threading.Lock()
 
-# إعدادات مراقب الإشعارات
 NOTIF_CHANNEL_ID = 0
 NOTIF_WATCH_ENABLED = False
 WHATSAPP_NOTIF_ONLY = True
@@ -518,11 +514,11 @@ async def _compress_image(src_path):
 
 
 # ==========================================================
-# إنشاء البوت — ✅ intents.message_content = True
+# إنشاء البوت
 # ==========================================================
 intents = discord.Intents.default()
 intents.messages = True
-intents.message_content = True   # ← ✅ مُصحح (كان False)
+intents.message_content = True
 intents.guilds = True
 
 bot = commands.Bot(
@@ -538,26 +534,22 @@ bot = commands.Bot(
 # Helpers للتحقق
 # ==========================================================
 def _check(interaction) -> bool:
-    """فحص صلاحية المستخدم (يعمل مع السلاش)."""
     allowed = STATE.get_allowed_id()
     return allowed is not None and interaction.user.id == allowed
 
 
 def _is_allowed(user) -> bool:
-    """فحص صلاحية المستخدم (عام)."""
     allowed = STATE.get_allowed_id()
     return allowed is not None and user.id == allowed
 
 
 def _is_owner(user) -> bool:
-    """فحص المالك."""
     with STATE._lock:
         owner = STATE.owner_id
     return owner is not None and user.id == owner
 
 
 def _rate_check(interaction) -> bool:
-    """فحص Rate Limit."""
     return RATE_LIMITER.check(interaction.user.id)
 
 
@@ -1029,11 +1021,9 @@ async def on_ready():
     log.info(f"🖼️ PIL: {'✅' if HAS_PIL else '❌'}")
     log.info(f"🌉 bridge.py: {'✅' if _BRIDGE_AVAILABLE else '❌'}")
 
-    # تشغيل مراقب الإشعارات
     if _notif_task is None and NOTIF_WATCH_ENABLED and NOTIF_CHANNEL_ID:
         _notif_task = asyncio.create_task(_notification_watcher_loop())
 
-    # مزامنة Slash Commands
     if _synced_once["value"]:
         return
     try:
@@ -1051,7 +1041,6 @@ async def on_ready():
     except Exception as e:
         log.error(f"❌ Sync error: {e}")
 
-    # تحديث النشاط
     try:
         prefix = STATE.prefix
         await bot.change_presence(
@@ -1062,14 +1051,14 @@ async def on_ready():
             status=discord.Status.online,
         )
     except Exception as e:
-        log.warn(f"Presence error: {e}")
+        log.warning(f"Presence error: {e}")   # ✅ log.warn → log.warning
 
     log.info("🎉 البوت جاهز")
 
 
 @bot.event
 async def on_disconnect():
-    log.warn("⚠️ Disconnected from Discord")
+    log.warning("⚠️ Disconnected from Discord")   # ✅ log.warn → log.warning
 
 
 @bot.event
@@ -1089,10 +1078,8 @@ async def on_error(event_method, *args, **kwargs):
 
 @bot.event
 async def on_message(message):
-    """حفظ المرفقات المرسلة من المالك."""
     allowed = STATE.get_allowed_id()
     if allowed is None or message.author.id != allowed:
-        # important: process commands anyway (prefix commands)
         await bot.process_commands(message)
         return
 
@@ -1140,7 +1127,6 @@ async def start_cmd(interaction: discord.Interaction):
     await interaction.response.defer()
     STATS.record_command("start")
 
-    # جلب الصلاحيات
     perms = {}
     if _BRIDGE_AVAILABLE and _bridge is not None:
         try:
@@ -2395,14 +2381,12 @@ def start_bot(
         log.error(msg)
         return msg
 
-    # إيقاف أي بوت سابق
     with _bot_start_lock:
         if STATE.is_running:
-            log.warn("⚠️ إيقاف البوت القديم...")
+            log.warning("⚠️ إيقاف البوت القديم...")   # ✅ log.warn → log.warning
             _stop_internal()
             time.sleep(1)
 
-    # حفظ الإعدادات
     with STATE._lock:
         STATE.token = token.strip()
         STATE.prefix = prefix or DEFAULT_PREFIX
@@ -2410,19 +2394,16 @@ def start_bot(
         STATE.guild_id = int(guild_id) if guild_id else None
         STATE.allowed_user_id = int(allowed_user_id) if allowed_user_id else None
 
-    # ✅ إعادة تعيين _ready_called و _synced_once
     _ready_called["value"] = False
     _synced_once["value"] = False
 
-    # ✅ إضافة owner_id للبوت (قبل الاتصال)
     if STATE.owner_id:
         try:
             bot.owner_id = int(STATE.owner_id)
             log.info(f"👑 bot.owner_id = {bot.owner_id}")
         except Exception as e:
-            log.warn(f"owner_id assignment failed: {e}")
+            log.warning(f"owner_id assignment failed: {e}")   # ✅ log.warn → log.warning
 
-    # ✅ تسجيل بدء التشغيل
     STATE.mark_running()
 
     try:
@@ -2486,7 +2467,7 @@ def _stop_internal():
             except Exception as e:
                 log.debug(f"_stop_internal: {e}")
     except Exception as e:
-        log.warn(f"_stop_internal outer: {e}")
+        log.warning(f"_stop_internal outer: {e}")   # ✅ log.warn → log.warning
 
 
 def stop_bot() -> str:
