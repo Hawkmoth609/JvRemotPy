@@ -1,8 +1,8 @@
 """
-bridge.py - v4.0 (النسخة الكاملة المصححة)
+bridge.py - v6.0 (الجسر الكامل مع كل الصلاحيات الجديدة)
 
-جسر للتواصل بين Python و Java.
-يوفّر كل دوال الوصول إلى ميزات أندرويد الأصلية.
+⛔ محذوف: SMS، Notifications
+✅ مضاف: CallLog، Location، Audio، Phone، Accounts، Sensors
 """
 
 import logging
@@ -25,10 +25,6 @@ _helper_cache: Dict[str, Any] = {}
 # ضبط السياق
 # ==========================================================
 def set_context(context) -> None:
-    """
-    يحفظ Context من Java — مع مسح cache القديم.
-    يقبل: Activity / Service / Application.
-    """
     global _context, _activity, _service
 
     _context = context
@@ -40,7 +36,6 @@ def set_context(context) -> None:
         log.info("Context cleared")
         return
 
-    # Activity؟
     try:
         if hasattr(context, 'getParentActivityIntent'):
             _activity = context
@@ -50,7 +45,6 @@ def set_context(context) -> None:
     except Exception:
         pass
 
-    # Service؟
     try:
         if hasattr(context, 'onBind'):
             _service = context
@@ -60,7 +54,6 @@ def set_context(context) -> None:
     except Exception:
         pass
 
-    # Application أو غيره
     _activity = None
     _service = None
     log.info("Context type: Application/Other")
@@ -148,7 +141,6 @@ def open_whatsapp_chat(phone: str = "", text: str = "") -> str:
     try:
         return _get_helper("AppLauncher").openWhatsappChat(phone or "", text or "")
     except Exception as e:
-        log.error(f"open_whatsapp_chat: {e}")
         return f"❌ خطأ: {e}"
 
 
@@ -156,7 +148,6 @@ def open_whatsapp_home() -> str:
     try:
         return _get_helper("AppLauncher").openWhatsappHome()
     except Exception as e:
-        log.error(f"open_whatsapp_home: {e}")
         return f"❌ خطأ: {e}"
 
 
@@ -164,15 +155,6 @@ def dial(phone: str) -> str:
     try:
         return _get_helper("AppLauncher").dial(phone)
     except Exception as e:
-        log.error(f"dial: {e}")
-        return f"❌ خطأ: {e}"
-
-
-def send_sms(phone: str, text: str) -> str:
-    try:
-        return _get_helper("AppLauncher").sendSms(phone, text)
-    except Exception as e:
-        log.error(f"send_sms: {e}")
         return f"❌ خطأ: {e}"
 
 
@@ -180,7 +162,6 @@ def open_file(path: str) -> str:
     try:
         return _get_helper("AppLauncher").openFile(path)
     except Exception as e:
-        log.error(f"open_file: {e}")
         return f"❌ خطأ: {e}"
 
 
@@ -190,7 +171,6 @@ def list_installed_apps() -> List[str]:
         result = helper.listInstalledApps()
         return list(result) if result else []
     except Exception as e:
-        log.error(f"list_installed_apps: {e}")
         return []
 
 
@@ -198,53 +178,39 @@ def open_camera_app() -> str:
     try:
         return _get_helper("AppLauncher").openCameraApp()
     except Exception as e:
-        log.error(f"open_camera_app: {e}")
         return f"❌ خطأ: {e}"
 
 
 # ==========================================================
-# الإشعارات
+# ⛔ SMS — معطّلة
+# ==========================================================
+def get_sms(limit: int = 10, search: str = "") -> str:
+    log.warning("get_sms: disabled (permission removed)")
+    return "[]"
+
+
+def send_sms(phone: str, text: str) -> str:
+    return "❌ الميزة معطّلة (تم حذف صلاحية الرسائل)"
+
+
+# ==========================================================
+# ⛔ الإشعارات — معطّلة
 # ==========================================================
 def get_notifications(filter_pkg: str = "", limit: int = 30) -> str:
-    try:
-        NotifReader = jclass("com.example.myfirstapp.NotifReader")
-        return NotifReader.getActiveNotificationsJson(filter_pkg or "", int(limit))
-    except Exception as e:
-        log.error(f"get_notifications: {e}")
-        return "[]"
+    log.warning("get_notifications: disabled")
+    return '{"status":"disabled","notifications":[]}'
 
 
 def is_notification_access_enabled() -> bool:
-    try:
-        NotifReader = jclass("com.example.myfirstapp.NotifReader")
-        return bool(NotifReader.isEnabled(_context))
-    except Exception as e:
-        log.error(f"is_notification_access_enabled: {e}")
-        return False
+    return False
 
 
 def open_notification_settings() -> str:
-    try:
-        return _get_helper("AppLauncher").openNotificationSettings()
-    except Exception as e:
-        log.error(f"open_notification_settings: {e}")
-        return f"❌ {e}"
+    return "❌ الميزة معطّلة"
 
 
 # ==========================================================
-# SMS
-# ==========================================================
-def get_sms(limit: int = 10, search: str = "") -> str:
-    try:
-        helper = _get_helper("SmsReader")
-        return helper.getSmsJson(int(limit), search or "")
-    except Exception as e:
-        log.error(f"get_sms: {e}")
-        return "[]"
-
-
-# ==========================================================
-# جهات الاتصال
+# ✅ جهات الاتصال
 # ==========================================================
 def get_contacts(search: str = "") -> str:
     try:
@@ -256,87 +222,261 @@ def get_contacts(search: str = "") -> str:
 
 
 # ==========================================================
-# البطارية
+# ✅ البطارية
 # ==========================================================
 def get_battery() -> str:
     try:
         return _get_helper("BatteryHelper").getBatteryJson()
     except Exception as e:
-        log.error(f"get_battery: {e}")
         return "{}"
 
 
 # ==========================================================
-# الحافظة
+# ✅ الحافظة
 # ==========================================================
 def get_clipboard() -> str:
     try:
         return _get_helper("ClipboardHelper").getClipboardText() or ""
     except Exception as e:
-        log.error(f"get_clipboard: {e}")
         return ""
 
 
 # ==========================================================
-# Toast
+# ✅ Toast
 # ==========================================================
 def show_toast(text: str) -> bool:
     try:
         _get_helper("ToastHelper").showToast(text)
         return True
     except Exception as e:
-        log.error(f"show_toast: {e}")
         return False
 
 
 # ==========================================================
-# الكاميرا
+# ✅ الكاميرا
 # ==========================================================
 def capture_camera(camera_id: int = 0) -> str:
     try:
         return _get_helper("CameraHelper").capturePhoto(int(camera_id)) or ""
     except Exception as e:
-        log.error(f"capture_camera: {e}")
         return ""
 
 
 # ==========================================================
-# لقطة الشاشة
+# ✅ لقطة الشاشة
 # ==========================================================
 def capture_screen() -> str:
     try:
         return _get_helper("ScreenCapture").capture() or ""
     except Exception as e:
-        log.error(f"capture_screen: {e}")
         return ""
 
 
 # ==========================================================
-# ✅ الصلاحيات — الإصلاح الجذري
+# ✅ سجل المكالمات (جديد)
+# ==========================================================
+def get_call_log(limit: int = 50, type_filter: str = "all",
+                 search: str = "") -> str:
+    """يُرجع سجل المكالمات كـ JSON."""
+    try:
+        helper = _get_helper("CallLogHelper")
+        return helper.getCallLogJson(int(limit),
+                                     type_filter or "all",
+                                     search or "")
+    except Exception as e:
+        log.error(f"get_call_log: {e}")
+        return "[]"
+
+
+def get_missed_calls_count() -> int:
+    """عدد المكالمات الفائتة الجديدة."""
+    try:
+        helper = _get_helper("CallLogHelper")
+        return int(helper.getMissedCount())
+    except Exception as e:
+        return 0
+
+
+# ==========================================================
+# ✅ الموقع (جديد)
+# ==========================================================
+def get_location() -> str:
+    """آخر موقع معروف كـ JSON."""
+    try:
+        helper = _get_helper("LocationHelper")
+        return helper.getLastKnownLocationJson()
+    except Exception as e:
+        log.error(f"get_location: {e}")
+        return "{}"
+
+
+def is_gps_enabled() -> bool:
+    try:
+        helper = _get_helper("LocationHelper")
+        return bool(helper.isGpsEnabled())
+    except Exception as e:
+        return False
+
+
+def get_location_providers() -> str:
+    try:
+        helper = _get_helper("LocationHelper")
+        return helper.getProvidersStatusJson()
+    except Exception as e:
+        return "{}"
+
+
+# ==========================================================
+# ✅ الميكروفون — تسجيل الصوت (جديد)
+# ==========================================================
+def start_audio_recording(duration_sec: int = 10) -> str:
+    """يبدأ تسجيل الصوت."""
+    try:
+        helper = _get_helper("AudioRecorder")
+        return helper.startRecording(int(duration_sec))
+    except Exception as e:
+        log.error(f"start_audio_recording: {e}")
+        return f"❌ {e}"
+
+
+def stop_audio_recording() -> str:
+    """يوقف التسجيل — يعيد المسار."""
+    try:
+        helper = _get_helper("AudioRecorder")
+        return helper.stopRecording() or ""
+    except Exception as e:
+        return ""
+
+
+def is_audio_recording() -> bool:
+    try:
+        helper = _get_helper("AudioRecorder")
+        return bool(helper.isRecording())
+    except Exception as e:
+        return False
+
+
+def get_recording_duration() -> int:
+    try:
+        helper = _get_helper("AudioRecorder")
+        return int(helper.getRecordingDuration())
+    except Exception as e:
+        return 0
+
+
+# ==========================================================
+# ✅ معلومات الهاتف (جديد)
+# ==========================================================
+def get_phone_info() -> str:
+    """معلومات الشبكة و SIM كـ JSON."""
+    try:
+        helper = _get_helper("PhoneHelper")
+        return helper.getPhoneInfoJson()
+    except Exception as e:
+        log.error(f"get_phone_info: {e}")
+        return "{}"
+
+
+def call_number(phone: str) -> str:
+    """إجراء مكالمة مباشرة — يحتاج CALL_PHONE."""
+    try:
+        helper = _get_helper("PhoneHelper")
+        return helper.callNumber(phone)
+    except Exception as e:
+        return f"❌ {e}"
+
+
+def has_call_permission() -> bool:
+    try:
+        helper = _get_helper("PhoneHelper")
+        return bool(helper.hasCallPermission())
+    except Exception as e:
+        return False
+
+
+# ==========================================================
+# ✅ الحسابات (جديد)
+# ==========================================================
+def get_accounts(filter_type: str = "") -> str:
+    """قائمة الحسابات كـ JSON."""
+    try:
+        helper = _get_helper("AccountsHelper")
+        return helper.getAccountsJson(filter_type or "")
+    except Exception as e:
+        log.error(f"get_accounts: {e}")
+        return "[]"
+
+
+def get_accounts_count(filter_type: str = "") -> int:
+    try:
+        helper = _get_helper("AccountsHelper")
+        return int(helper.getAccountCount(filter_type or ""))
+    except Exception as e:
+        return 0
+
+
+# ==========================================================
+# ✅ المستشعرات (جديد)
+# ==========================================================
+def list_sensors() -> str:
+    """قائمة كل المستشعرات."""
+    try:
+        helper = _get_helper("SensorHelper")
+        return helper.listSensorsJson()
+    except Exception as e:
+        return "[]"
+
+
+def read_heart_rate() -> str:
+    """قراءة نبضات القلب."""
+    try:
+        helper = _get_helper("SensorHelper")
+        return helper.readHeartRateJson()
+    except Exception as e:
+        return "{}"
+
+
+def read_step_counter() -> str:
+    """قراءة عدد الخطوات."""
+    try:
+        helper = _get_helper("SensorHelper")
+        return helper.readStepCounterJson()
+    except Exception as e:
+        return "{}"
+
+
+def read_accelerometer() -> str:
+    try:
+        helper = _get_helper("SensorHelper")
+        return helper.readAccelerometerJson()
+    except Exception as e:
+        return "{}"
+
+
+def read_gyroscope() -> str:
+    try:
+        helper = _get_helper("SensorHelper")
+        return helper.readGyroscopeJson()
+    except Exception as e:
+        return "{}"
+
+
+# ==========================================================
+# ✅ الصلاحيات
 # ==========================================================
 def _get_permission_manager():
-    """ينشئ PermissionManager بسياق صالح."""
     if _context is None:
         raise RuntimeError("Context not set")
-    
     PermissionManager = jclass("com.example.myfirstapp.PermissionManager")
     return PermissionManager(_context)
 
 
 def get_permissions_json() -> str:
-    """
-    يُرجع حالة كل الصلاحيات كـ JSON.
-    ✅ الإصلاح: نمرر _context مباشرة.
-    """
     if _context is None:
-        log.warning("get_permissions_json: _context is None")
         return "{}"
-
     try:
         helper = _get_permission_manager()
-        result = helper.getPermissionsJson()
-        log.info(f"get_permissions_json: {result[:200]}")
-        return result
+        return helper.getPermissionsJson()
     except Exception as e:
         log.error(f"get_permissions_json: {e}")
         return "{}"
@@ -346,32 +486,19 @@ def has_all_files_access() -> bool:
     if _context is None:
         return False
     try:
-        helper = _get_permission_manager()
-        return bool(helper.hasAllFilesAccess())
+        return bool(_get_permission_manager().hasAllFilesAccess())
     except Exception as e:
-        log.error(f"has_all_files_access: {e}")
         return False
 
 
 def has_notification_access() -> bool:
-    if _context is None:
-        return False
-    try:
-        helper = _get_permission_manager()
-        return bool(helper.hasNotificationAccess())
-    except Exception as e:
-        log.error(f"has_notification_access: {e}")
-        return False
+    return False
 
 
 # ==========================================================
-# ✅ اختبار التخزين — تشخيصي
+# ✅ اختبار التخزين
 # ==========================================================
 def test_storage_access() -> str:
-    """
-    يختبر الوصول الفعلي لمسارات التخزين الرئيسية.
-    يُستخدم للتشخيص.
-    """
     import os as _os
     results = {}
     test_paths = [
@@ -382,7 +509,6 @@ def test_storage_access() -> str:
         "/storage/emulated/0/Pictures",
     ]
 
-    # أضف مسار الملفات الخاص بالتطبيق
     if _context is not None:
         try:
             files_dir = str(_context.getFilesDir().getAbsolutePath())
@@ -424,7 +550,6 @@ def get_device_info() -> Dict[str, Any]:
             "product": str(Build.PRODUCT),
         }
     except Exception as e:
-        log.error(f"get_device_info: {e}")
         return {"error": str(e)}
 
 
@@ -467,7 +592,4 @@ def get_status_json() -> str:
         return "{}"
 
 
-# ==========================================================
-# تسجيل أولي
-# ==========================================================
-log.info("bridge.py loaded - v4.0 (full corrected)")
+log.info("bridge.py loaded - v6.0 (full permissions)")
